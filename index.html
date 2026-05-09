@@ -20,9 +20,10 @@
             align-items: center;
             min-height: 100vh;
             padding: 10px;
+            overflow: hidden;
         }
 
-        .intro-screen {
+        .fullscreen-overlay {
             position: fixed;
             top: 0;
             left: 0;
@@ -33,30 +34,32 @@
             justify-content: center;
             align-items: center;
             z-index: 1000;
-            animation: scrollDown 3s ease-in forwards;
+            overflow: hidden;
+        }
+
+        .scroll-text {
+            font-size: 24px;
+            text-align: center;
+            white-space: pre;
+            text-shadow: 0 0 10px #00ff41;
+            letter-spacing: 1px;
+            line-height: 1.4;
+            animation: scrollDown 5s ease-in forwards;
         }
 
         @keyframes scrollDown {
             0% {
-                transform: translateY(-100%);
+                transform: translateY(-100vh);
             }
-            33% {
+            20% {
                 transform: translateY(0);
             }
-            66% {
+            80% {
                 transform: translateY(0);
             }
             100% {
                 transform: translateY(100vh);
             }
-        }
-
-        .intro-text {
-            font-size: 48px;
-            font-weight: bold;
-            text-shadow: 0 0 20px #00ff41;
-            text-align: center;
-            letter-spacing: 2px;
         }
 
         .game-container {
@@ -70,6 +73,14 @@
             flex-direction: column;
             height: 90vh;
             max-height: 600px;
+            opacity: 0;
+            animation: fadeIn 0.5s ease-in 5s forwards;
+        }
+
+        @keyframes fadeIn {
+            to {
+                opacity: 1;
+            }
         }
 
         .game-header {
@@ -160,8 +171,8 @@
     </style>
 </head>
 <body>
-    <div class="intro-screen">
-        <div class="intro-text">> SUPERSELLER8086 <</div>
+    <div class="fullscreen-overlay" id="overlay">
+        <div class="scroll-text" id="scrollText"></div>
     </div>
 
     <div class="game-container">
@@ -183,6 +194,36 @@
     </div>
 
     <script>
+        const introScreens = [
+            `> SUPERSELLER8086 <
+            
+████████████████████████████████
+████████████████████████████████
+████████████████████████████████
+████████████████████████████████`,
+            `
+    Welcome Adventurer
+    
+  Press any key to continue...
+            `
+        ];
+
+        let currentScreen = 0;
+
+        function showNextScreen() {
+            if (currentScreen < introScreens.length) {
+                document.getElementById('scrollText').textContent = introScreens[currentScreen];
+                currentScreen++;
+                setTimeout(showNextScreen, 5000);
+            } else {
+                document.getElementById('overlay').style.display = 'none';
+                initializeGame();
+            }
+        }
+
+        // Start the intro sequence
+        showNextScreen();
+
         const game = {
             currentRoom: 'entrance',
             inventory: [],
@@ -351,15 +392,14 @@ QUIT - Exit the game`;
             }
         });
 
-        // Initialize game after intro animation
-        setTimeout(function() {
+        function initializeGame() {
             const gameOutput = document.getElementById('gameOutput');
             gameOutput.textContent = `Welcome to SUPERSELLER8086
 A Text Adventure Game
 
 Type HELP for commands.\n\n${game.world[game.currentRoom].description}`;
             document.getElementById('commandInput').focus();
-        }, 3000);
+        }
     </script>
 </body>
 </html>
