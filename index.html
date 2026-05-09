@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SuperSeller8086 - Text Adventure Game</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #0a0e27;
+            color: #00ff41;
+            font-family: 'Courier New', monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 10px;
+        }
+
+        .game-container {
+            width: 100%;
+            max-width: 800px;
+            background-color: #1a1f3a;
+            border: 2px solid #00ff41;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
+            display: flex;
+            flex-direction: column;
+            height: 90vh;
+            max-height: 600px;
+        }
+
+        .game-header {
+            background-color: #0a0e27;
+            border-bottom: 2px solid #00ff41;
+            padding: 15px;
+            text-align: center;
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 0 0 10px #00ff41;
+        }
+
+        .game-output {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+            border-bottom: 2px solid #00ff41;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .game-output::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .game-output::-webkit-scrollbar-track {
+            background: #0a0e27;
+        }
+
+        .game-output::-webkit-scrollbar-thumb {
+            background: #00ff41;
+            border-radius: 4px;
+        }
+
+        .game-input-area {
+            display: flex;
+            gap: 5px;
+            padding: 15px;
+            background-color: #0a0e27;
+        }
+
+        .game-input {
+            flex: 1;
+            background-color: #1a1f3a;
+            border: 1px solid #00ff41;
+            color: #00ff41;
+            padding: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            outline: none;
+        }
+
+        .game-input:focus {
+            box-shadow: 0 0 5px #00ff41;
+        }
+
+        button {
+            background-color: #00ff41;
+            color: #0a0e27;
+            border: none;
+            padding: 10px 20px;
+            font-weight: bold;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            border-radius: 3px;
+            transition: all 0.3s;
+        }
+
+        button:hover {
+            background-color: #00cc33;
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.5);
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+
+        .inventory-display {
+            background-color: #0a0e27;
+            border-top: 1px solid #00ff41;
+            padding: 10px 15px;
+            font-size: 12px;
+            max-height: 50px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <div class="game-header">
+            > SUPERSELLER8086 <
+        </div>
+        <div class="game-output" id="gameOutput"></div>
+        <div class="inventory-display" id="inventoryDisplay">Inventory: empty</div>
+        <div class="game-input-area">
+            <input 
+                type="text" 
+                class="game-input" 
+                id="commandInput" 
+                placeholder="Enter command..."
+                autocomplete="off"
+            >
+            <button onclick="submitCommand()">SUBMIT</button>
+        </div>
+    </div>
+
+    <script>
+        const game = {
+            currentRoom: 'entrance',
+            inventory: [],
+            world: {
+                entrance: {
+                    description: `You stand at the entrance of an ancient cave. 
+A cold wind blows from within. You can see paths leading:
+- NORTH: Into the darkness
+- EAST: Along the cave wall
+- WEST: To a glowing chamber
+
+You spot a RUSTY_SWORD here.`,
+                    exits: { north: 'corridor', east: 'treasure_room', west: 'crystal_chamber' },
+                    items: ['rusty_sword']
+                },
+                corridor: {
+                    description: `You're in a narrow corridor. Strange markings cover the walls.
+Paths lead:
+- SOUTH: Back to the entrance
+- EAST: Deeper into the cave`,
+                    exits: { south: 'entrance', east: 'dragon_lair' },
+                    items: []
+                },
+                treasure_room: {
+                    description: `A room filled with glimmering treasures!
+Paths lead:
+- WEST: Back to the entrance
+- NORTH: To an underground lake
+
+You see a GOLDEN_COIN and a TREASURE_MAP here.`,
+                    exits: { west: 'entrance', north: 'underground_lake' },
+                    items: ['golden_coin', 'treasure_map']
+                },
+                crystal_chamber: {
+                    description: `Beautiful crystals glow with an ethereal light.
+Paths lead:
+- EAST: Back to the entrance
+
+A CRYSTAL_AMULET rests on a pedestal.`,
+                    exits: { east: 'entrance' },
+                    items: ['crystal_amulet']
+                },
+                dragon_lair: {
+                    description: `You enter a massive cavern. Bones litter the ground.
+In the center sleeps a DRAGON!
+- WEST: Back to the corridor
+
+There's a DRAGON_SCALE here (dropped by the beast).`,
+                    exits: { west: 'corridor' },
+                    items: ['dragon_scale']
+                },
+                underground_lake: {
+                    description: `A vast underground lake glows with bioluminescence.
+Paths lead:
+- SOUTH: Back to the treasure room
+
+A MYSTERIOUS_ORB floats above the water.`,
+                    exits: { south: 'treasure_room' },
+                    items: ['mysterious_orb']
+                }
+            },
+
+            processCommand: function(input) {
+                const command = input.toLowerCase().trim().split(' ');
+                const action = command[0];
+                const args = command.slice(1).join('_').toUpperCase();
+
+                let output = '';
+
+                switch(action) {
+                    case 'look':
+                        output = this.world[this.currentRoom].description;
+                        break;
+
+                    case 'go':
+                    case 'move':
+                        const direction = command[1].toLowerCase();
+                        if (this.world[this.currentRoom].exits[direction]) {
+                            this.currentRoom = this.world[this.currentRoom].exits[direction];
+                            output = `You move ${direction}...\n\n${this.world[this.currentRoom].description}`;
+                        } else {
+                            output = `You can't go ${direction} from here.`;
+                        }
+                        break;
+
+                    case 'take':
+                    case 'get':
+                        const item = args;
+                        if (this.world[this.currentRoom].items.includes(item)) {
+                            this.inventory.push(item);
+                            this.world[this.currentRoom].items = this.world[this.currentRoom].items.filter(i => i !== item);
+                            output = `You picked up: ${item.replace(/_/g, ' ')}`;
+                        } else {
+                            output = `That item isn't here.`;
+                        }
+                        break;
+
+                    case 'inventory':
+                    case 'inv':
+                    case 'i':
+                        output = this.inventory.length > 0 
+                            ? `Inventory:\n${this.inventory.map(i => '- ' + i.replace(/_/g, ' ')).join('\n')}`
+                            : `Your inventory is empty.`;
+                        break;
+
+                    case 'help':
+                        output = `Available Commands:
+LOOK - Examine the current room
+GO [direction] - Move (north, south, east, west)
+TAKE [item] - Pick up an item
+INVENTORY - Check your items
+HELP - Show this message
+QUIT - Exit the game`;
+                        break;
+
+                    case 'quit':
+                    case 'exit':
+                        output = `Thanks for playing SuperSeller8086!\n\nRefresh the page to restart.`;
+                        document.getElementById('commandInput').disabled = true;
+                        break;
+
+                    default:
+                        output = `Unknown command: ${action}\nType HELP for available commands.`;
+                }
+
+                return output;
+            },
+
+            updateDisplay: function(output) {
+                const gameOutput = document.getElementById('gameOutput');
+                gameOutput.textContent += '\n> ' + output + '\n';
+                gameOutput.scrollTop = gameOutput.scrollHeight;
+                this.updateInventoryDisplay();
+            },
+
+            updateInventoryDisplay: function() {
+                const invDisplay = document.getElementById('inventoryDisplay');
+                if (this.inventory.length > 0) {
+                    invDisplay.textContent = 'Inventory: ' + this.inventory.map(i => i.replace(/_/g, ' ')).join(', ');
+                } else {
+                    invDisplay.textContent = 'Inventory: empty';
+                }
+            }
+        };
+
+        function submitCommand() {
+            const input = document.getElementById('commandInput');
+            const command = input.value;
+
+            if (command.trim() === '') return;
+
+            const gameOutput = document.getElementById('gameOutput');
+            gameOutput.textContent += '\n$ ' + command;
+            gameOutput.scrollTop = gameOutput.scrollHeight;
+
+            const output = game.processCommand(command);
+            game.updateDisplay(output);
+
+            input.value = '';
+            input.focus();
+        }
+
+        document.getElementById('commandInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                submitCommand();
+            }
+        });
+
+        // Initialize game
+        window.addEventListener('load', function() {
+            const gameOutput = document.getElementById('gameOutput');
+            gameOutput.textContent = `Welcome to SUPERSELLER8086
+A Text Adventure Game
+
+Type HELP for commands.\n\n${game.world[game.currentRoom].description}`;
+            document.getElementById('commandInput').focus();
+        });
+    </script>
+</body>
+</html>
