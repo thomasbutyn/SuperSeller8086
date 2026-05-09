@@ -3,12 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SuperSeller8086 - Text Adventure Game</title>
+    <title>SuperSeller8086 - Stock Trading Game</title>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
         }
 
         body {
@@ -18,8 +23,6 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            min-height: 100vh;
-            padding: 10px;
             overflow: hidden;
         }
 
@@ -37,29 +40,38 @@
             overflow: hidden;
         }
 
+        .fullscreen-overlay.hidden {
+            display: none;
+        }
+
         .scroll-text {
-            font-size: 18px;
+            font-size: 20px;
             text-align: center;
             white-space: pre;
             text-shadow: 0 0 10px #00ff41;
             letter-spacing: 1px;
-            line-height: 1.4;
-            animation: scrollDown 6s ease-in forwards;
+            line-height: 1.5;
+            animation: scrollDown 6s ease-in-out forwards;
             max-width: 90%;
+            padding: 20px;
         }
 
         @keyframes scrollDown {
             0% {
-                transform: translateY(-100vh);
+                transform: translateY(-150vh);
+                opacity: 1;
             }
-            15% {
+            10% {
                 transform: translateY(0);
+                opacity: 1;
             }
-            85% {
+            80% {
                 transform: translateY(0);
+                opacity: 1;
             }
             100% {
-                transform: translateY(100vh);
+                transform: translateY(150vh);
+                opacity: 1;
             }
         }
 
@@ -74,14 +86,6 @@
             flex-direction: column;
             height: 90vh;
             max-height: 600px;
-            opacity: 0;
-            animation: fadeIn 0.5s ease-in 18s forwards;
-        }
-
-        @keyframes fadeIn {
-            to {
-                opacity: 1;
-            }
         }
 
         .game-header {
@@ -213,7 +217,7 @@
                     type="text" 
                     class="game-input" 
                     id="commandInput" 
-                    placeholder="Enter command (Q=buy, A=sell, or type: BUY STOCK_NAME QUANTITY)..."
+                    placeholder="Enter command (Q=buy, A=sell)..."
                     autocomplete="off"
                 >
                 <button onclick="submitCommand()">SUBMIT</button>
@@ -242,9 +246,7 @@ each round will EXPIRE and become
 WORTHLESS ($0 value).
 
 You must buy and sell quickly to
-maximize profits before expiration!
-
-Ready? Press ENTER to continue...`,
+maximize profits before expiration!`,
 
             `    ENTERING STOCK MARKET
         
@@ -255,17 +257,20 @@ Ready? Press ENTER to continue...`,
         ];
 
         let currentScreen = 0;
-        let gameStarted = false;
 
         function showNextScreen() {
             if (currentScreen < introScreens.length) {
-                document.getElementById('scrollText').textContent = introScreens[currentScreen];
+                const scrollText = document.getElementById('scrollText');
+                scrollText.textContent = introScreens[currentScreen];
+                scrollText.style.animation = 'none';
+                setTimeout(() => {
+                    scrollText.style.animation = 'scrollDown 6s ease-in-out forwards';
+                }, 10);
                 currentScreen++;
-                setTimeout(showNextScreen, 6000);
+                setTimeout(showNextScreen, 6100);
             } else {
-                document.getElementById('overlay').style.display = 'none';
+                document.getElementById('overlay').classList.add('hidden');
                 initializeGame();
-                gameStarted = true;
                 startRound();
             }
         }
@@ -285,8 +290,7 @@ Ready? Press ENTER to continue...`,
                 GOLD: 0,
                 CRYPTO: 0,
                 OIL: 0
-            },
-            trades: []
+            }
         };
 
         let roundTime = 30;
@@ -302,7 +306,7 @@ Ready? Press ENTER to continue...`,
             updateMarketDisplay();
         }
 
-        function displayStockChart(stockName, height = 5) {
+        function displayStockChart(stockName, height = 4) {
             const history = stocks[stockName].history.slice(-10);
             const maxPrice = Math.max(...history);
             const minPrice = Math.min(...history);
@@ -332,7 +336,7 @@ Ready? Press ENTER to continue...`,
 
             display += 'PRICE CHARTS (Last 10 updates):\n\n';
             Object.keys(stocks).forEach(stock => {
-                display += `${stock}:\n${displayStockChart(stock, 4)}\n`;
+                display += `${stock}:\n${displayStockChart(stock, 3)}\n`;
             });
 
             document.getElementById('stockMarket').textContent = display;
@@ -354,6 +358,8 @@ Ready? Press ENTER to continue...`,
             updateMarketDisplay();
             updatePlayerStats();
 
+            if (roundInterval) clearInterval(roundInterval);
+
             roundInterval = setInterval(() => {
                 roundTime--;
                 document.getElementById('roundTimer').textContent = roundTime;
@@ -368,13 +374,11 @@ Ready? Press ENTER to continue...`,
         function endRound() {
             clearInterval(roundInterval);
             
-            // Expire all stocks
-            let message = '\n⚠️  END OF ROUND ⚠️\n';
-            message += 'All unsold stocks have EXPIRED!\n';
+            let message = '⚠️  END OF ROUND ⚠️\n\nAll unsold stocks have EXPIRED!\n';
             
             Object.keys(player.portfolio).forEach(stock => {
                 if (player.portfolio[stock] > 0) {
-                    message += `Lost ${player.portfolio[stock]} ${stock} shares (value: $0)\n`;
+                    message += `Lost ${player.portfolio[stock]} ${stock} shares\n`;
                     player.portfolio[stock] = 0;
                 }
             });
@@ -391,12 +395,7 @@ Ready? Press ENTER to continue...`,
             } else if (command === 'A') {
                 return sellMenu();
             } else if (command === 'HELP') {
-                return `COMMANDS:
-Q - Open buy menu
-A - Open sell menu
-BUY STOCK_NAME QUANTITY - Buy stocks
-SELL STOCK_NAME QUANTITY - Sell stocks
-Example: BUY TECH 5`;
+                return `COMMANDS:\nQ - Buy Stock\nA - Sell Stock\nBUY STOCK_NAME QUANTITY\nSELL STOCK_NAME QUANTITY`;
             } else if (command.startsWith('BUY ')) {
                 const parts = command.slice(4).split(' ');
                 const stock = parts[0];
@@ -416,7 +415,7 @@ Example: BUY TECH 5`;
             Object.keys(stocks).forEach(stock => {
                 menu += `${stock}: $${stocks[stock].price.toFixed(2)}\n`;
             });
-            menu += '\nUse: BUY STOCK_NAME QUANTITY\nExample: BUY TECH 5';
+            menu += '\nUse: BUY STOCK_NAME QUANTITY';
             return menu;
         }
 
@@ -425,14 +424,14 @@ Example: BUY TECH 5`;
             let hasStocks = false;
             Object.keys(player.portfolio).forEach(stock => {
                 if (player.portfolio[stock] > 0) {
-                    menu += `${stock}: ${player.portfolio[stock]} shares @ $${stocks[stock].price.toFixed(2)} each\n`;
+                    menu += `${stock}: ${player.portfolio[stock]} shares @ $${stocks[stock].price.toFixed(2)}\n`;
                     hasStocks = true;
                 }
             });
             if (!hasStocks) {
                 menu = 'You have no stocks to sell!';
             } else {
-                menu += '\nUse: SELL STOCK_NAME QUANTITY\nExample: SELL TECH 5';
+                menu += '\nUse: SELL STOCK_NAME QUANTITY';
             }
             return menu;
         }
@@ -449,7 +448,7 @@ Example: BUY TECH 5`;
             player.cash -= cost;
             player.portfolio[stock] += quantity;
             updatePlayerStats();
-            return `✓ Bought ${quantity} ${stock} @ $${stocks[stock].price.toFixed(2)} each`;
+            return `✓ Bought ${quantity} ${stock} @ $${stocks[stock].price.toFixed(2)}`;
         }
 
         function sellStock(stock, quantity) {
@@ -463,7 +462,7 @@ Example: BUY TECH 5`;
             player.cash += proceeds;
             player.portfolio[stock] -= quantity;
             updatePlayerStats();
-            return `✓ Sold ${quantity} ${stock} @ $${stocks[stock].price.toFixed(2)} each for $${proceeds.toFixed(2)}`;
+            return `✓ Sold ${quantity} ${stock} for $${proceeds.toFixed(2)}`;
         }
 
         function submitCommand() {
