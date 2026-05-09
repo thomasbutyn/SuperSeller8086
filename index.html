@@ -22,6 +22,43 @@
             padding: 10px;
         }
 
+        .intro-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #0a0e27;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            animation: scrollDown 3s ease-in forwards;
+        }
+
+        @keyframes scrollDown {
+            0% {
+                transform: translateY(-100%);
+            }
+            33% {
+                transform: translateY(0);
+            }
+            66% {
+                transform: translateY(0);
+            }
+            100% {
+                transform: translateY(100vh);
+            }
+        }
+
+        .intro-text {
+            font-size: 48px;
+            font-weight: bold;
+            text-shadow: 0 0 20px #00ff41;
+            text-align: center;
+            letter-spacing: 2px;
+        }
+
         .game-container {
             width: 100%;
             max-width: 800px;
@@ -123,6 +160,10 @@
     </style>
 </head>
 <body>
+    <div class="intro-screen">
+        <div class="intro-text">> SUPERSELLER8086 <</div>
+    </div>
+
     <div class="game-container">
         <div class="game-header">
             > SUPERSELLER8086 <
@@ -310,15 +351,15 @@ QUIT - Exit the game`;
             }
         });
 
-        // Initialize game
-        window.addEventListener('load', function() {
+        // Initialize game after intro animation
+        setTimeout(function() {
             const gameOutput = document.getElementById('gameOutput');
             gameOutput.textContent = `Welcome to SUPERSELLER8086
 A Text Adventure Game
 
 Type HELP for commands.\n\n${game.world[game.currentRoom].description}`;
             document.getElementById('commandInput').focus();
-        });
+        }, 3000);
     </script>
 </body>
 </html>
