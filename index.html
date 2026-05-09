@@ -52,28 +52,28 @@
             text-shadow: 0 0 10px #00ff41;
             letter-spacing: 0px;
             line-height: 1.2;
-            animation: scrollDown 6s ease-in-out forwards;
             max-width: 95vw;
             padding: 20px;
             overflow: hidden;
+            transform: translateY(-150vh);
+        }
+
+        .scroll-text.active {
+            animation: scrollDown 6s ease-in-out forwards;
         }
 
         @keyframes scrollDown {
             0% {
                 transform: translateY(-150vh);
-                opacity: 1;
             }
             10% {
                 transform: translateY(0);
-                opacity: 1;
             }
             80% {
                 transform: translateY(0);
-                opacity: 1;
             }
             100% {
                 transform: translateY(150vh);
-                opacity: 1;
             }
         }
 
@@ -265,10 +265,12 @@ maximize profits before expiration!`,
             if (currentScreen < introScreens.length) {
                 const scrollText = document.getElementById('scrollText');
                 scrollText.textContent = introScreens[currentScreen];
-                scrollText.style.animation = 'none';
-                setTimeout(() => {
-                    scrollText.style.animation = 'scrollDown 6s ease-in-out forwards';
-                }, 10);
+                scrollText.classList.remove('active');
+                
+                // Force reflow to restart animation
+                void scrollText.offsetWidth;
+                
+                scrollText.classList.add('active');
                 currentScreen++;
                 setTimeout(showNextScreen, 6100);
             } else {
