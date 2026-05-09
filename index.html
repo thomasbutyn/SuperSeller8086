@@ -117,7 +117,7 @@
             white-space: pre;
             word-wrap: break-word;
             font-size: 11px;
-            line-height: 1.3;
+            line-height: 1.2;
             font-family: 'Courier New', monospace;
         }
 
@@ -209,24 +209,24 @@
 
     <div class="game-container">
         <div class="game-header">
-            <span>> STOCK MARKET <</span>
+            <span>> RED <span id="redPrice">$45.00</span> <</span>
             <span class="timer">Time: <span id="roundTimer">30</span>s</span>
         </div>
         <div class="stock-market" id="stockMarket"></div>
-        <div class="player-stats" id="playerStats">Cash: $1000 | Shares: 0 | Portfolio: $0</div>
+        <div class="player-stats" id="playerStats">Cash: $1000 | Shares: 0 | Value: $0</div>
         <div class="game-input-area">
             <div class="command-row">
                 <input 
                     type="text" 
                     class="game-input" 
                     id="commandInput" 
-                    placeholder="Enter command (Q=buy, A=sell)..."
+                    placeholder="Enter quantity or command..."
                     autocomplete="off"
                 >
                 <button onclick="submitCommand()">SUBMIT</button>
             </div>
             <div class="command-info">
-                Q: Buy Stock | A: Sell Stock | HELP: Show commands
+                Q: Buy | A: Sell
             </div>
         </div>
     </div>
@@ -251,12 +251,8 @@ WORTHLESS ($0 value).
 You must buy and sell quickly to
 maximize profits before expiration!`,
 
-            `ENTERING STOCK MARKET
-        
-███████████████████████
-███████████████████████
-███████████████████████
-███████████████████████`
+            `Buy (q)
+Sell (a)`
         ];
 
         let currentScreen = 0;
@@ -280,39 +276,35 @@ maximize profits before expiration!`,
             }
         }
 
-        // Stocks data
-        const stocks = {
-            TECH: { price: 45, volatility: 0.15, history: [45] },
-            GOLD: { price: 32, volatility: 0.08, history: [32] },
-            CRYPTO: { price: 120, volatility: 0.25, history: [120] },
-            OIL: { price: 55, volatility: 0.12, history: [55] }
+        // Stock data
+        const stock = {
+            price: 45,
+            volatility: 0.15,
+            history: [45]
         };
 
         let player = {
             cash: 1000,
-            portfolio: {
-                TECH: 0,
-                GOLD: 0,
-                CRYPTO: 0,
-                OIL: 0
-            }
+            shares: 0,
+            trades: []
         };
 
         let roundTime = 30;
         let roundInterval = null;
+        let currentMode = null; // 'buy' or 'sell'
 
-        function updateStockPrices() {
-            Object.keys(stocks).forEach(stock => {
-                const changePercent = (Math.random() - 0.5) * stocks[stock].volatility;
-                const newPrice = Math.max(1, stocks[stock].price * (1 + changePercent));
-                stocks[stock].price = parseFloat(newPrice.toFixed(2));
-                stocks[stock].history.push(stocks[stock].price);
-            });
+        function updateStockPrice() {
+            const changePercent = (Math.random() - 0.5) * stock.volatility;
+            const newPrice = Math.max(1, stock.price * (1 + changePercent));
+            stock.price = parseFloat(newPrice.toFixed(2));
+            stock.history.push(stock.price);
+            
+            document.getElementById('redPrice').textContent = `$${stock.price.toFixed(2)}`;
             updateMarketDisplay();
         }
 
-        function displayStockChart(stockName, height = 3) {
-            const history = stocks[stockName].history.slice(-10);
+        function displayStockChart(height = 12) {
+            const history = stock.history.slice(-40);
             const maxPrice = Math.max(...history);
             const minPrice = Math.min(...history);
             const range = maxPrice - minPrice || 1;
@@ -323,7 +315,12 @@ maximize profits before expiration!`,
                 for (let j = 0; j < history.length; j++) {
                     const normalized = (history[j] - minPrice) / range;
                     const barHeight = Math.round(normalized * (height - 1));
-                    line += barHeight >= (height - 1 - i) ? '█' : ' ';
+                    
+                    if (barHeight >= (height - 1 - i)) {
+                        line += '·';
+                    } else {
+                        line += ' ';
+                    }
                 }
                 chart += line + '\n';
             }
@@ -331,30 +328,15 @@ maximize profits before expiration!`,
         }
 
         function updateMarketDisplay() {
-            let display = '┌─ STOCK PRICES ──────────────┐\n';
-            Object.keys(stocks).forEach(stock => {
-                const price = stocks[stock].price;
-                display += `${stock.padEnd(7)} $${price.toFixed(2).padStart(7)} H:${player.portfolio[stock]}\n`;
-            });
-            display += '└──────────────────────────────┘\n\n';
-
-            display += 'CHARTS:\n';
-            Object.keys(stocks).forEach(stock => {
-                display += `${stock}:\n${displayStockChart(stock, 3)}\n`;
-            });
-
+            let display = displayStockChart(12);
             document.getElementById('stockMarket').textContent = display;
+            document.getElementById('stockMarket').scrollTop = document.getElementById('stockMarket').scrollHeight;
         }
 
         function updatePlayerStats() {
-            let portfolioValue = 0;
-            Object.keys(player.portfolio).forEach(stock => {
-                portfolioValue += player.portfolio[stock] * stocks[stock].price;
-            });
-
-            let totalShares = Object.values(player.portfolio).reduce((a, b) => a + b, 0);
+            const portfolioValue = player.shares * stock.price;
             document.getElementById('playerStats').textContent = 
-                `Cash: $${player.cash.toFixed(2)} | Shares: ${totalShares} | Value: $${portfolioValue.toFixed(2)}`;
+                `Cash: $${player.cash.toFixed(2)} | Shares: ${player.shares} | Value: $${portfolioValue.toFixed(2)}`;
         }
 
         function startRound() {
@@ -367,7 +349,7 @@ maximize profits before expiration!`,
             roundInterval = setInterval(() => {
                 roundTime--;
                 document.getElementById('roundTimer').textContent = roundTime;
-                updateStockPrices();
+                updateStockPrice();
 
                 if (roundTime <= 0) {
                     endRound();
@@ -377,114 +359,92 @@ maximize profits before expiration!`,
 
         function endRound() {
             clearInterval(roundInterval);
+            currentMode = null;
             
             let message = '⚠️  END OF ROUND ⚠️\n\nAll unsold stocks EXPIRED!\n';
             
-            Object.keys(player.portfolio).forEach(stock => {
-                if (player.portfolio[stock] > 0) {
-                    message += `Lost ${player.portfolio[stock]} ${stock}\n`;
-                    player.portfolio[stock] = 0;
-                }
-            });
+            if (player.shares > 0) {
+                message += `Lost ${player.shares} RED shares\n`;
+                player.shares = 0;
+            }
 
             alert(message + '\nStarting new round...');
             startRound();
         }
 
-        function processCommand(input) {
-            const command = input.toUpperCase().trim();
+        function buyStock(quantity) {
+            if (!quantity || quantity <= 0) return 'Invalid quantity!';
 
-            if (command === 'Q') {
-                return buyMenu();
-            } else if (command === 'A') {
-                return sellMenu();
-            } else if (command === 'HELP') {
-                return `COMMANDS:\nQ - Buy\nA - Sell\nBUY NAME QTY\nSELL NAME QTY`;
-            } else if (command.startsWith('BUY ')) {
-                const parts = command.slice(4).split(' ');
-                const stock = parts[0];
-                const quantity = parseInt(parts[1]);
-                return buyStock(stock, quantity);
-            } else if (command.startsWith('SELL ')) {
-                const parts = command.slice(5).split(' ');
-                const stock = parts[0];
-                const quantity = parseInt(parts[1]);
-                return sellStock(stock, quantity);
-            }
-            return 'Unknown command. Type HELP for options.';
-        }
-
-        function buyMenu() {
-            let menu = 'AVAILABLE STOCKS:\n';
-            Object.keys(stocks).forEach(stock => {
-                menu += `${stock}: $${stocks[stock].price.toFixed(2)}\n`;
-            });
-            menu += '\nBUY STOCK_NAME QUANTITY';
-            return menu;
-        }
-
-        function sellMenu() {
-            let menu = 'YOUR HOLDINGS:\n';
-            let hasStocks = false;
-            Object.keys(player.portfolio).forEach(stock => {
-                if (player.portfolio[stock] > 0) {
-                    menu += `${stock}: ${player.portfolio[stock]} @ $${stocks[stock].price.toFixed(2)}\n`;
-                    hasStocks = true;
-                }
-            });
-            if (!hasStocks) {
-                menu = 'No stocks to sell!';
-            } else {
-                menu += '\nSELL STOCK_NAME QUANTITY';
-            }
-            return menu;
-        }
-
-        function buyStock(stock, quantity) {
-            if (!stocks[stock]) return `Stock ${stock} not found!`;
-            if (!quantity || quantity <= 0) return 'Invalid qty!';
-
-            const cost = stocks[stock].price * quantity;
+            const cost = stock.price * quantity;
             if (cost > player.cash) {
-                return `Insufficient funds!`;
+                return `Insufficient funds! Need $${cost.toFixed(2)}, have $${player.cash.toFixed(2)}`;
             }
 
             player.cash -= cost;
-            player.portfolio[stock] += quantity;
+            player.shares += quantity;
             updatePlayerStats();
-            return `✓ Bought ${quantity} ${stock}`;
+            currentMode = null;
+            document.getElementById('commandInput').value = '';
+            return `✓ Bought ${quantity} RED @ $${stock.price.toFixed(2)}`;
         }
 
-        function sellStock(stock, quantity) {
-            if (!stocks[stock]) return `Stock ${stock} not found!`;
-            if (!quantity || quantity <= 0) return 'Invalid qty!';
-            if (player.portfolio[stock] < quantity) {
-                return `Only have ${player.portfolio[stock]}!`;
+        function sellStock(quantity) {
+            if (!quantity || quantity <= 0) return 'Invalid quantity!';
+            if (player.shares < quantity) {
+                return `Only have ${player.shares} shares!`;
             }
 
-            const proceeds = stocks[stock].price * quantity;
+            const proceeds = stock.price * quantity;
             player.cash += proceeds;
-            player.portfolio[stock] -= quantity;
+            player.shares -= quantity;
             updatePlayerStats();
-            return `✓ Sold ${quantity} ${stock}`;
+            currentMode = null;
+            document.getElementById('commandInput').value = '';
+            return `✓ Sold ${quantity} RED for $${proceeds.toFixed(2)}`;
         }
 
         function submitCommand() {
             const input = document.getElementById('commandInput');
-            const command = input.value;
+            const command = input.value.trim();
 
-            if (command.trim() === '') return;
+            if (!command) return;
 
-            const stockMarket = document.getElementById('stockMarket');
-            stockMarket.textContent += '\n$ ' + command + '\n';
+            let output = '';
             
-            const output = processCommand(command);
-            stockMarket.textContent += output + '\n';
-            stockMarket.scrollTop = stockMarket.scrollHeight;
+            if (currentMode === 'buy') {
+                const quantity = parseInt(command);
+                output = buyStock(quantity);
+            } else if (currentMode === 'sell') {
+                const quantity = parseInt(command);
+                output = sellStock(quantity);
+            } else {
+                output = 'Unknown command.';
+            }
+
+            if (output) {
+                const stockMarket = document.getElementById('stockMarket');
+                stockMarket.textContent += '\n$ ' + command + '\n' + output + '\n';
+                stockMarket.scrollTop = stockMarket.scrollHeight;
+            }
 
             input.value = '';
             input.focus();
         }
+
+        // Handle Q and A key presses
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'q' || e.key === 'Q') {
+                e.preventDefault();
+                currentMode = 'buy';
+                document.getElementById('commandInput').focus();
+                document.getElementById('commandInput').value = '';
+            } else if (e.key === 'a' || e.key === 'A') {
+                e.preventDefault();
+                currentMode = 'sell';
+                document.getElementById('commandInput').focus();
+                document.getElementById('commandInput').value = '';
+            }
+        });
 
         document.getElementById('commandInput').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
@@ -494,6 +454,7 @@ maximize profits before expiration!`,
 
         function initializeGame() {
             updateMarketDisplay();
+            updatePlayerStats();
             document.getElementById('commandInput').focus();
         }
 
