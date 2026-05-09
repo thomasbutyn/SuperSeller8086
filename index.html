@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SuperSeller8086 - Stock Trading Game</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
         * {
             margin: 0;
             padding: 0;
@@ -19,7 +21,7 @@
         body {
             background-color: #0a0e27;
             color: #ffffff;
-            font-family: 'Courier New', monospace;
+            font-family: 'Press Start 2P', cursive;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -59,23 +61,19 @@
             padding: 0;
             gap: 0;
             overflow: hidden;
+            position: relative;
         }
 
         .console-cell {
             display: flex;
             justify-content: center;
             align-items: center;
-            font-size: 1vw;
+            font-size: clamp(8px, 1.2vw, 20px);
             line-height: 1;
             text-shadow: 0 0 5px #ffffff;
             white-space: pre;
             aspect-ratio: 1;
-        }
-
-        @media (max-width: 900px) {
-            .console-cell {
-                font-size: 1.5vw;
-            }
+            position: relative;
         }
 
         .game-wrapper {
@@ -101,25 +99,20 @@
             padding: 0;
             gap: 0;
             overflow: hidden;
+            position: relative;
         }
 
         .game-cell {
             display: flex;
             justify-content: center;
             align-items: center;
-            font-size: 1vw;
+            font-size: clamp(8px, 1.2vw, 20px);
             line-height: 1;
             text-shadow: 0 0 5px #ffffff;
             white-space: pre;
             aspect-ratio: 1;
             border-bottom: 1px solid #0a0e27;
             border-right: 1px solid #0a0e27;
-        }
-
-        @media (max-width: 900px) {
-            .game-cell {
-                font-size: 1.5vw;
-            }
         }
 
         .results-screen {
@@ -156,20 +149,18 @@
             padding: 0;
             gap: 0;
             overflow: hidden;
-            font-size: 1vw;
+            position: relative;
         }
 
-        .results-text {
-            grid-column: 1 / -1;
-            grid-row: 1 / -1;
+        .results-cell {
             display: flex;
             justify-content: center;
             align-items: center;
-            text-align: center;
-            white-space: pre;
-            padding: 20px;
-            line-height: 1.4;
+            font-size: clamp(8px, 1.2vw, 20px);
+            line-height: 1;
             text-shadow: 0 0 5px #ffffff;
+            white-space: pre;
+            aspect-ratio: 1;
         }
 
         .results-button {
@@ -179,8 +170,8 @@
             padding: 15px 30px;
             font-weight: bold;
             cursor: pointer;
-            font-family: 'Courier New', monospace;
-            font-size: 16px;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 12px;
             border-radius: 3px;
             transition: all 0.3s;
         }
@@ -188,6 +179,28 @@
         .results-button:hover {
             background-color: #cccccc;
             box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        }
+
+        @keyframes slideDown {
+            from {
+                transform: translateY(-100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideOut {
+            from {
+                transform: translateY(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateY(100%);
+                opacity: 0;
+            }
         }
     </style>
 </head>
@@ -197,10 +210,8 @@
     </div>
 
     <div class="results-screen" id="resultsScreen">
-        <div class="results-console">
-            <div class="results-text" id="resultsText"></div>
-        </div>
-        <button class="results-button" onclick="startNewRound()">NEXT ROUND (ENTER)</button>
+        <div class="results-console" id="resultsConsole"></div>
+        <button class="results-button" onclick="handleResultsEnter()">NEXT</button>
     </div>
 
     <div class="game-wrapper">
@@ -215,14 +226,12 @@
                 "                                        ",
                 "                                        ",
                 "                                        ",
-                "          > SUPERSELLER8086 <           ",
+                "    > SUPERSELLER8086 <                 ",
                 "                                        ",
-                "          █████████████████              ",
-                "          █████████████████              ",
-                "          █████████████████              ",
-                "          █████████████████              ",
-                "                                        ",
-                "                                        ",
+                "    █████████████████                   ",
+                "    █████████████████                   ",
+                "    █████████████████                   ",
+                "    █████████████████                   ",
                 "                                        ",
                 "                                        ",
                 "                                        ",
@@ -241,20 +250,21 @@
                 "                                        ",
                 "                                        ",
                 "                                        ",
-                "        Press ENTER to continue         "
+                "                                        ",
+                "                                        ",
+                "    Press ENTER to continue             "
             ],
             // Screen 2: Warning
             [
                 "                                        ",
+                "    WELCOME TO STOCK TRADING             ",
                 "                                        ",
-                "        WELCOME TO STOCK TRADING        ",
+                "    WARNING: 30 seconds per round        ",
                 "                                        ",
-                "    WARNING: Each round lasts 30 secs!  ",
+                "    Unsold stocks EXPIRE and become      ",
+                "    WORTHLESS ($0 value)                ",
                 "                                        ",
-                "    Unsold stocks will EXPIRE and       ",
-                "    become WORTHLESS ($0 value)         ",
-                "                                        ",
-                "    Buy & sell quickly to maximize      ",
+                "    Buy & sell quickly to maximize       ",
                 "    profits before expiration!          ",
                 "                                        ",
                 "                                        ",
@@ -275,22 +285,20 @@
                 "                                        ",
                 "                                        ",
                 "                                        ",
-                "        Press ENTER to continue         "
+                "    Press ENTER to continue             "
             ],
             // Screen 3: Instructions
             [
                 "                                        ",
                 "                                        ",
                 "                                        ",
+                "         BUY (Q) / SELL (A)              ",
                 "                                        ",
-                "           BUY (Q) / SELL (A)           ",
+                "     Watch the price and trade          ",
                 "                                        ",
-                "       Watch the price chart and        ",
-                "       decide when to buy or sell       ",
+                "     Q = Buy  |  A = Sell                ",
                 "                                        ",
-                "       Type quantity after pressing     ",
-                "       Q or A, then press ENTER         ",
-                "                                        ",
+                "     Type quantity then ENTER            ",
                 "                                        ",
                 "                                        ",
                 "                                        ",
@@ -309,7 +317,8 @@
                 "                                        ",
                 "                                        ",
                 "                                        ",
-                "        Press ENTER to continue         "
+                "                                        ",
+                "    Press ENTER to continue             "
             ]
         ];
 
@@ -317,49 +326,34 @@
         let waitingForEnter = false;
         let gameActive = false;
 
-        function renderGrid(grid, container, animate = false) {
+        function renderStaticGrid(lines, container) {
             container.innerHTML = '';
-            grid.forEach((line, rowIdx) => {
-                const chars = line.split('');
-                chars.forEach((char, colIdx) => {
+            for (let row = 0; row < 30; row++) {
+                const line = lines[row] || '';
+                for (let col = 0; col < 40; col++) {
                     const cell = document.createElement('div');
-                    cell.className = animate ? 'console-cell' : 'game-cell';
-                    cell.textContent = char;
+                    cell.className = container.id === 'introConsole' ? 'console-cell' : 'game-cell';
+                    cell.textContent = line[col] || ' ';
+                    cell.style.gridColumn = col + 1;
+                    cell.style.gridRow = row + 1;
                     
-                    if (animate) {
-                        // Staggered animation by column
-                        const delay = colIdx * 0.02;
-                        cell.style.animation = `slideDown 0.5s ease-out ${delay}s both`;
+                    // Calculate animation for intro screens
+                    if (container.id === 'introConsole') {
+                        const char = line[col];
+                        if (char && char !== ' ') {
+                            const delay = col * 0.02 + (row * 0.01);
+                            cell.style.animation = `slideDown 0.8s ease-out ${delay}s both`;
+                        }
                     }
                     
                     container.appendChild(cell);
-                });
-            });
-            
-            // Add keyframes if animating
-            if (animate && !document.querySelector('style[data-animation]')) {
-                const style = document.createElement('style');
-                style.setAttribute('data-animation', 'true');
-                style.textContent = `
-                    @keyframes slideDown {
-                        from {
-                            transform: translateY(-100%);
-                            opacity: 0;
-                        }
-                        to {
-                            transform: translateY(0);
-                            opacity: 1;
-                        }
-                    }
-                `;
-                document.head.appendChild(style);
+                }
             }
         }
 
         function showIntroScreen() {
             if (currentScreen < introScreens.length) {
-                const grid = introScreens[currentScreen];
-                renderGrid(grid, document.getElementById('introConsole'), true);
+                renderStaticGrid(introScreens[currentScreen], document.getElementById('introConsole'));
                 waitingForEnter = true;
                 currentScreen++;
             } else {
@@ -389,26 +383,31 @@
         let roundTime = 30;
         let roundInterval = null;
         let currentMode = null; // 'buy' or 'sell'
-        let modeActive = false;
 
         function buildGameGrid() {
-            const grid = Array(30).fill(null).map(() => Array(40).fill(' '));
+            const lines = Array(30).fill('').map(() => Array(40).fill(' ').join(''));
             
+            // Convert to array for manipulation
+            const grid = lines.split('\n').map(line => line.split(''));
+
             // Header: price and timer
-            const header = `RED $${stock.price.toFixed(2)}`.padEnd(20);
-            const timer = `${roundTime}s`.padStart(20);
-            const topLine = header + timer;
-            topLine.split('').forEach((char, i) => {
-                if (i < 40) grid[0][i] = char;
+            const header = `RED $${stock.price.toFixed(2)}`;
+            const timerStr = `${roundTime}s`;
+            
+            header.split('').forEach((char, i) => {
+                if (i < 20) grid[0][i] = char;
+            });
+            timerStr.split('').forEach((char, i) => {
+                if (i + 30 < 40) grid[0][30 + i] = char;
             });
 
             // Separator
-            grid[1] = Array(40).fill('─');
+            for (let i = 0; i < 40; i++) grid[1][i] = '─';
 
-            // Chart (rows 3-18)
+            // Chart (rows 3-15)
             const chartStart = 3;
-            const chartHeight = 12;
-            const history = stock.history.slice(-40);
+            const chartHeight = 10;
+            const history = stock.history.slice(-38);
             const maxPrice = Math.max(...history);
             const minPrice = Math.min(...history);
             const range = maxPrice - minPrice || 1;
@@ -421,41 +420,41 @@
                 }
             }
 
-            // Status line
-            grid[16] = Array(40).fill('─');
+            // Separator
+            for (let i = 0; i < 40; i++) grid[16][i] = '─';
 
-            // Buy/Sell mode display
-            if (modeActive) {
+            // Mode display
+            if (currentMode) {
                 const modeText = currentMode === 'buy' ? 'BUY MODE' : 'SELL MODE';
                 modeText.split('').forEach((char, i) => {
                     if (i < 40) grid[18][i] = char;
                 });
             }
 
-            // Stats (rows 19-25)
-            const cash = `Cash: $${player.cash.toFixed(2)}`.substring(0, 40);
-            const shares = `Shares: ${player.shares}`.substring(0, 40);
-            const value = `Value: $${(player.shares * stock.price).toFixed(2)}`.substring(0, 40);
+            // Stats
+            const cash = `Cash: $${player.cash.toFixed(2)}`;
+            const shares = `Shares: ${player.shares}`;
+            const value = `Value: $${(player.shares * stock.price).toFixed(2)}`;
             
             cash.split('').forEach((char, i) => { if (i < 40) grid[20][i] = char; });
             shares.split('').forEach((char, i) => { if (i < 40) grid[21][i] = char; });
             value.split('').forEach((char, i) => { if (i < 40) grid[22][i] = char; });
 
+            // Separator
+            for (let i = 0; i < 40; i++) grid[27][i] = '─';
+
             // Instructions
-            grid[27] = Array(40).fill('─');
             const instruct1 = 'Q: Buy | A: Sell';
             instruct1.split('').forEach((char, i) => { if (i < 40) grid[28][i] = char; });
 
-            const instruct2 = modeActive ? 'Enter qty and press ENTER' : 'Press Q or A to trade';
+            const instruct2 = currentMode ? 'Enter qty and press ENTER' : 'Press Q or A to trade';
             instruct2.split('').forEach((char, i) => { if (i < 40) grid[29][i] = char; });
 
-            return grid;
+            return grid.map(row => row.join(''));
         }
 
         function updateGameDisplay() {
-            const grid = buildGameGrid();
-            const gridStr = grid.map(row => row.join('')).join('\n');
-            renderGrid(grid, document.getElementById('gameConsole'), false);
+            renderStaticGrid(buildGameGrid(), document.getElementById('gameConsole'));
         }
 
         function updateStockPrice() {
@@ -469,7 +468,7 @@
         function startRound() {
             roundTime = 30;
             stock.history = [stock.price];
-            modeActive = false;
+            currentMode = null;
             updateGameDisplay();
 
             if (roundInterval) clearInterval(roundInterval);
@@ -493,22 +492,30 @@
             const profit = totalValue - player.startingCash;
             const profitPercent = ((profit / player.startingCash) * 100).toFixed(1);
 
-            let resultsText = `ROUND OVER
+            const results = [
+                "ROUND OVER",
+                "",
+                `Final: $${stock.price.toFixed(2)}`,
+                `Unsold: ${player.shares}`,
+                "",
+                `Cash: $${player.cash.toFixed(2)}`,
+                `Portfolio: $${portfolioValue.toFixed(2)}`,
+                `Total: $${totalValue.toFixed(2)}`,
+                "",
+                `Profit: $${profit.toFixed(2)}`,
+                `(${profitPercent}%)`
+            ];
 
-Final Price: $${stock.price.toFixed(2)}
-Unsold Shares: ${player.shares}
+            // Pad to 30 lines
+            while (results.length < 30) {
+                results.push('');
+            }
 
-Cash: $${player.cash.toFixed(2)}
-Portfolio: $${portfolioValue.toFixed(2)}
-Total: $${totalValue.toFixed(2)}
-
-Profit: $${profit.toFixed(2)} (${profitPercent}%)`;
-
-            document.getElementById('resultsText').textContent = resultsText;
+            renderStaticGrid(results, document.getElementById('resultsConsole'));
             document.getElementById('resultsScreen').classList.add('show');
         }
 
-        function startNewRound() {
+        function handleResultsEnter() {
             document.getElementById('resultsScreen').classList.remove('show');
             
             player.cash = 1000;
@@ -550,34 +557,25 @@ Profit: $${profit.toFixed(2)} (${profitPercent}%)`;
                 return;
             }
 
-            if (!gameActive) return;
+            if (!gameActive || !currentMode) return;
 
-            const input = document.getElementById('commandInput');
-            const command = input.value.trim();
-
-            if (!command) return;
-
+            const quantity = parseInt(prompt(`Enter quantity to ${currentMode}:`));
+            
             let success = false;
             
             if (currentMode === 'buy') {
-                const quantity = parseInt(command);
                 success = buyStock(quantity);
             } else if (currentMode === 'sell') {
-                const quantity = parseInt(command);
                 success = sellStock(quantity);
             }
 
             if (success) {
-                modeActive = false;
                 currentMode = null;
                 updateGameDisplay();
             }
-
-            input.value = '';
-            input.focus();
         }
 
-        // Handle Q and A key presses
+        // Handle key presses
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
@@ -585,26 +583,19 @@ Profit: $${profit.toFixed(2)} (${profitPercent}%)`;
                 return;
             }
 
+            if (waitingForEnter) return;
             if (!gameActive) return;
             
             if (e.key === 'q' || e.key === 'Q') {
                 e.preventDefault();
-                currentMode = 'buy';
-                modeActive = true;
+                currentMode = currentMode === 'buy' ? null : 'buy';
                 updateGameDisplay();
             } else if (e.key === 'a' || e.key === 'A') {
                 e.preventDefault();
-                currentMode = 'sell';
-                modeActive = true;
+                currentMode = currentMode === 'sell' ? null : 'sell';
                 updateGameDisplay();
             }
         });
-
-        // Create dummy input for Enter handling
-        const dummyInput = document.createElement('input');
-        dummyInput.id = 'commandInput';
-        dummyInput.style.display = 'none';
-        document.body.appendChild(dummyInput);
 
         // Start intro sequence
         showIntroScreen();
