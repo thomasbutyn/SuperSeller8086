@@ -38,6 +38,7 @@
             align-items: center;
             z-index: 1000;
             overflow: hidden;
+            padding: 0;
         }
 
         .fullscreen-overlay.hidden {
@@ -45,15 +46,16 @@
         }
 
         .scroll-text {
-            font-size: 20px;
+            font-size: 14px;
             text-align: center;
             white-space: pre;
             text-shadow: 0 0 10px #00ff41;
-            letter-spacing: 1px;
-            line-height: 1.5;
+            letter-spacing: 0px;
+            line-height: 1.2;
             animation: scrollDown 6s ease-in-out forwards;
-            max-width: 90%;
+            max-width: 95vw;
             padding: 20px;
+            overflow: hidden;
         }
 
         @keyframes scrollDown {
@@ -86,6 +88,7 @@
             flex-direction: column;
             height: 90vh;
             max-height: 600px;
+            margin: 0 10px;
         }
 
         .game-header {
@@ -111,10 +114,10 @@
             overflow-y: auto;
             padding: 15px;
             border-bottom: 2px solid #00ff41;
-            white-space: pre-wrap;
+            white-space: pre;
             word-wrap: break-word;
-            font-size: 12px;
-            line-height: 1.4;
+            font-size: 11px;
+            line-height: 1.3;
             font-family: 'Courier New', monospace;
         }
 
@@ -191,7 +194,7 @@
             background-color: #0a0e27;
             border-top: 1px solid #00ff41;
             padding: 10px 15px;
-            font-size: 12px;
+            font-size: 11px;
             display: flex;
             justify-content: space-around;
             flex-wrap: wrap;
@@ -231,13 +234,13 @@
     <script>
         const introScreens = [
             `> SUPERSELLER8086 <
+
+███████████████████████
+███████████████████████
+███████████████████████
+███████████████████████`,
             
-████████████████████████████████
-████████████████████████████████
-████████████████████████████████
-████████████████████████████████`,
-            
-            `  WELCOME TO STOCK TRADING
+            `WELCOME TO STOCK TRADING
         
 WARNING: Each round lasts 30 seconds!
 
@@ -248,12 +251,12 @@ WORTHLESS ($0 value).
 You must buy and sell quickly to
 maximize profits before expiration!`,
 
-            `    ENTERING STOCK MARKET
+            `ENTERING STOCK MARKET
         
-████████████████████████████████
-████████████████████████████████
-████████████████████████████████
-████████████████████████████████`
+███████████████████████
+███████████████████████
+███████████████████████
+███████████████████████`
         ];
 
         let currentScreen = 0;
@@ -306,7 +309,7 @@ maximize profits before expiration!`,
             updateMarketDisplay();
         }
 
-        function displayStockChart(stockName, height = 4) {
+        function displayStockChart(stockName, height = 3) {
             const history = stocks[stockName].history.slice(-10);
             const maxPrice = Math.max(...history);
             const minPrice = Math.min(...history);
@@ -326,15 +329,14 @@ maximize profits before expiration!`,
         }
 
         function updateMarketDisplay() {
-            let display = '┌─ STOCK PRICES ─────────────────┐\n';
+            let display = '┌─ STOCK PRICES ──────────────┐\n';
             Object.keys(stocks).forEach(stock => {
                 const price = stocks[stock].price;
-                display += `${stock.padEnd(7)} $${price.toFixed(2).padStart(7)} `;
-                display += `(Holdings: ${player.portfolio[stock]})\n`;
+                display += `${stock.padEnd(7)} $${price.toFixed(2).padStart(7)} H:${player.portfolio[stock]}\n`;
             });
-            display += '└─────────────────────────────────┘\n\n';
+            display += '└──────────────────────────────┘\n\n';
 
-            display += 'PRICE CHARTS (Last 10 updates):\n\n';
+            display += 'CHARTS:\n';
             Object.keys(stocks).forEach(stock => {
                 display += `${stock}:\n${displayStockChart(stock, 3)}\n`;
             });
@@ -350,7 +352,7 @@ maximize profits before expiration!`,
 
             let totalShares = Object.values(player.portfolio).reduce((a, b) => a + b, 0);
             document.getElementById('playerStats').textContent = 
-                `Cash: $${player.cash.toFixed(2)} | Total Shares: ${totalShares} | Portfolio Value: $${portfolioValue.toFixed(2)}`;
+                `Cash: $${player.cash.toFixed(2)} | Shares: ${totalShares} | Value: $${portfolioValue.toFixed(2)}`;
         }
 
         function startRound() {
@@ -374,11 +376,11 @@ maximize profits before expiration!`,
         function endRound() {
             clearInterval(roundInterval);
             
-            let message = '⚠️  END OF ROUND ⚠️\n\nAll unsold stocks have EXPIRED!\n';
+            let message = '⚠️  END OF ROUND ⚠️\n\nAll unsold stocks EXPIRED!\n';
             
             Object.keys(player.portfolio).forEach(stock => {
                 if (player.portfolio[stock] > 0) {
-                    message += `Lost ${player.portfolio[stock]} ${stock} shares\n`;
+                    message += `Lost ${player.portfolio[stock]} ${stock}\n`;
                     player.portfolio[stock] = 0;
                 }
             });
@@ -395,7 +397,7 @@ maximize profits before expiration!`,
             } else if (command === 'A') {
                 return sellMenu();
             } else if (command === 'HELP') {
-                return `COMMANDS:\nQ - Buy Stock\nA - Sell Stock\nBUY STOCK_NAME QUANTITY\nSELL STOCK_NAME QUANTITY`;
+                return `COMMANDS:\nQ - Buy\nA - Sell\nBUY NAME QTY\nSELL NAME QTY`;
             } else if (command.startsWith('BUY ')) {
                 const parts = command.slice(4).split(' ');
                 const stock = parts[0];
@@ -411,11 +413,11 @@ maximize profits before expiration!`,
         }
 
         function buyMenu() {
-            let menu = 'AVAILABLE STOCKS TO BUY:\n';
+            let menu = 'AVAILABLE STOCKS:\n';
             Object.keys(stocks).forEach(stock => {
                 menu += `${stock}: $${stocks[stock].price.toFixed(2)}\n`;
             });
-            menu += '\nUse: BUY STOCK_NAME QUANTITY';
+            menu += '\nBUY STOCK_NAME QUANTITY';
             return menu;
         }
 
@@ -424,45 +426,45 @@ maximize profits before expiration!`,
             let hasStocks = false;
             Object.keys(player.portfolio).forEach(stock => {
                 if (player.portfolio[stock] > 0) {
-                    menu += `${stock}: ${player.portfolio[stock]} shares @ $${stocks[stock].price.toFixed(2)}\n`;
+                    menu += `${stock}: ${player.portfolio[stock]} @ $${stocks[stock].price.toFixed(2)}\n`;
                     hasStocks = true;
                 }
             });
             if (!hasStocks) {
-                menu = 'You have no stocks to sell!';
+                menu = 'No stocks to sell!';
             } else {
-                menu += '\nUse: SELL STOCK_NAME QUANTITY';
+                menu += '\nSELL STOCK_NAME QUANTITY';
             }
             return menu;
         }
 
         function buyStock(stock, quantity) {
             if (!stocks[stock]) return `Stock ${stock} not found!`;
-            if (!quantity || quantity <= 0) return 'Invalid quantity!';
+            if (!quantity || quantity <= 0) return 'Invalid qty!';
 
             const cost = stocks[stock].price * quantity;
             if (cost > player.cash) {
-                return `Insufficient funds! Need $${cost.toFixed(2)}, have $${player.cash.toFixed(2)}`;
+                return `Insufficient funds!`;
             }
 
             player.cash -= cost;
             player.portfolio[stock] += quantity;
             updatePlayerStats();
-            return `✓ Bought ${quantity} ${stock} @ $${stocks[stock].price.toFixed(2)}`;
+            return `✓ Bought ${quantity} ${stock}`;
         }
 
         function sellStock(stock, quantity) {
             if (!stocks[stock]) return `Stock ${stock} not found!`;
-            if (!quantity || quantity <= 0) return 'Invalid quantity!';
+            if (!quantity || quantity <= 0) return 'Invalid qty!';
             if (player.portfolio[stock] < quantity) {
-                return `You only have ${player.portfolio[stock]} ${stock} shares!`;
+                return `Only have ${player.portfolio[stock]}!`;
             }
 
             const proceeds = stocks[stock].price * quantity;
             player.cash += proceeds;
             player.portfolio[stock] -= quantity;
             updatePlayerStats();
-            return `✓ Sold ${quantity} ${stock} for $${proceeds.toFixed(2)}`;
+            return `✓ Sold ${quantity} ${stock}`;
         }
 
         function submitCommand() {
