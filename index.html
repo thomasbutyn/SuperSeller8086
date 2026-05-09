@@ -38,52 +38,43 @@
             align-items: center;
             z-index: 1000;
             overflow: hidden;
-            padding: 0;
+            padding: 20px;
         }
 
         .fullscreen-overlay.hidden {
             display: none;
         }
 
-        .scroll-columns {
-            display: flex;
-            gap: 20px;
+        .intro-console {
             width: 100%;
-            height: 100%;
+            aspect-ratio: 1;
+            max-width: 600px;
+            background-color: #1a1f3a;
+            border: 3px solid #ffffff;
+            border-radius: 5px;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+            display: grid;
+            grid-template-columns: repeat(40, 1fr);
+            grid-template-rows: repeat(30, 1fr);
+            padding: 0;
+            gap: 0;
+            overflow: hidden;
+        }
+
+        .console-cell {
+            display: flex;
             justify-content: center;
             align-items: center;
-            flex-wrap: wrap;
-        }
-
-        .scroll-column {
-            font-size: 14px;
-            text-align: center;
+            font-size: 1vw;
+            line-height: 1;
+            text-shadow: 0 0 5px #ffffff;
             white-space: pre;
-            text-shadow: 0 0 10px #ffffff;
-            letter-spacing: 0px;
-            line-height: 1.2;
-            max-width: 300px;
-            padding: 20px;
-            overflow: hidden;
-            transform: translateY(-150vh);
+            aspect-ratio: 1;
         }
 
-        .scroll-column:nth-child(1) { animation: columnScroll 6s ease-in-out 0s forwards; }
-        .scroll-column:nth-child(2) { animation: columnScroll 6s ease-in-out 0.3s forwards; }
-        .scroll-column:nth-child(3) { animation: columnScroll 6s ease-in-out 0.6s forwards; }
-
-        @keyframes columnScroll {
-            0% {
-                transform: translateY(-150vh);
-            }
-            10% {
-                transform: translateY(0);
-            }
-            80% {
-                transform: translateY(0);
-            }
-            100% {
-                transform: translateY(150vh);
+        @media (max-width: 900px) {
+            .console-cell {
+                font-size: 1.5vw;
             }
         }
 
@@ -104,118 +95,31 @@
             border: 3px solid #ffffff;
             border-radius: 5px;
             box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
-            display: flex;
-            flex-direction: column;
+            display: grid;
+            grid-template-columns: repeat(40, 1fr);
+            grid-template-rows: repeat(30, 1fr);
+            padding: 0;
+            gap: 0;
+            overflow: hidden;
         }
 
-        .game-header {
-            background-color: #0a0e27;
-            border-bottom: 2px solid #ffffff;
-            padding: 15px;
-            text-align: center;
-            font-size: 18px;
-            font-weight: bold;
-            text-shadow: 0 0 10px #ffffff;
+        .game-cell {
             display: flex;
-            justify-content: space-between;
+            justify-content: center;
             align-items: center;
-        }
-
-        .timer {
-            font-size: 16px;
-            color: #ffffff;
-        }
-
-        .stock-market {
-            flex: 1;
-            overflow-y: auto;
-            padding: 15px;
-            border-bottom: 2px solid #ffffff;
+            font-size: 1vw;
+            line-height: 1;
+            text-shadow: 0 0 5px #ffffff;
             white-space: pre;
-            word-wrap: break-word;
-            font-size: 12px;
-            line-height: 1.2;
-            font-family: 'Courier New', monospace;
+            aspect-ratio: 1;
+            border-bottom: 1px solid #0a0e27;
+            border-right: 1px solid #0a0e27;
         }
 
-        .stock-market::-webkit-scrollbar {
-            width: 8px;
-        }
-
-        .stock-market::-webkit-scrollbar-track {
-            background: #0a0e27;
-        }
-
-        .stock-market::-webkit-scrollbar-thumb {
-            background: #ffffff;
-            border-radius: 4px;
-        }
-
-        .game-input-area {
-            display: flex;
-            gap: 5px;
-            padding: 15px;
-            background-color: #0a0e27;
-            flex-direction: column;
-        }
-
-        .command-row {
-            display: flex;
-            gap: 5px;
-        }
-
-        .game-input {
-            flex: 1;
-            background-color: #1a1f3a;
-            border: 1px solid #ffffff;
-            color: #ffffff;
-            padding: 10px;
-            font-family: 'Courier New', monospace;
-            font-size: 14px;
-            outline: none;
-        }
-
-        .game-input:focus {
-            box-shadow: 0 0 5px #ffffff;
-        }
-
-        button {
-            background-color: #ffffff;
-            color: #0a0e27;
-            border: none;
-            padding: 10px 20px;
-            font-weight: bold;
-            cursor: pointer;
-            font-family: 'Courier New', monospace;
-            border-radius: 3px;
-            transition: all 0.3s;
-        }
-
-        button:hover {
-            background-color: #cccccc;
-            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
-        }
-
-        button:active {
-            transform: scale(0.95);
-        }
-
-        .command-info {
-            font-size: 12px;
-            color: #ffffff;
-            margin-top: 10px;
-            text-align: center;
-        }
-
-        .player-stats {
-            background-color: #0a0e27;
-            border-top: 1px solid #ffffff;
-            padding: 10px 15px;
-            font-size: 12px;
-            display: flex;
-            justify-content: space-around;
-            flex-wrap: wrap;
-            gap: 10px;
+        @media (max-width: 900px) {
+            .game-cell {
+                font-size: 1.5vw;
+            }
         }
 
         .results-screen {
@@ -238,13 +142,34 @@
             display: flex;
         }
 
-        .results-content {
+        .results-console {
+            width: 100%;
+            aspect-ratio: 1;
+            max-width: 600px;
+            background-color: #1a1f3a;
+            border: 3px solid #ffffff;
+            border-radius: 5px;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+            display: grid;
+            grid-template-columns: repeat(40, 1fr);
+            grid-template-rows: repeat(30, 1fr);
+            padding: 0;
+            gap: 0;
+            overflow: hidden;
+            font-size: 1vw;
+        }
+
+        .results-text {
+            grid-column: 1 / -1;
+            grid-row: 1 / -1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
             text-align: center;
             white-space: pre;
-            font-size: 16px;
-            line-height: 1.6;
-            max-width: 500px;
-            text-shadow: 0 0 10px #ffffff;
+            padding: 20px;
+            line-height: 1.4;
+            text-shadow: 0 0 5px #ffffff;
         }
 
         .results-button {
@@ -268,96 +193,184 @@
 </head>
 <body>
     <div class="fullscreen-overlay" id="overlay">
-        <div class="scroll-columns" id="scrollColumns"></div>
+        <div class="intro-console" id="introConsole"></div>
     </div>
 
     <div class="results-screen" id="resultsScreen">
-        <div class="results-content" id="resultsContent"></div>
-        <button class="results-button" onclick="startNewRound()">NEXT ROUND</button>
+        <div class="results-console">
+            <div class="results-text" id="resultsText"></div>
+        </div>
+        <button class="results-button" onclick="startNewRound()">NEXT ROUND (ENTER)</button>
     </div>
 
     <div class="game-wrapper">
-        <div class="game-container">
-            <div class="game-header">
-                <span>> RED <span id="redPrice">$45.00</span> <</span>
-                <span class="timer">Time: <span id="roundTimer">30</span>s</span>
-            </div>
-            <div class="stock-market" id="stockMarket"></div>
-            <div class="player-stats" id="playerStats">Cash: $1000 | Shares: 0 | Value: $0</div>
-            <div class="game-input-area">
-                <div class="command-row">
-                    <input 
-                        type="text" 
-                        class="game-input" 
-                        id="commandInput" 
-                        placeholder="Enter quantity..."
-                        autocomplete="off"
-                    >
-                    <button onclick="submitCommand()">SUBMIT</button>
-                </div>
-                <div class="command-info">
-                    Q: Buy | A: Sell
-                </div>
-            </div>
-        </div>
+        <div class="game-container" id="gameConsole"></div>
     </div>
 
     <script>
+        // 40x30 grid intro screens
         const introScreens = [
-            `> SUPERSELLER8086 <
-
-███████████████████████
-███████████████████████
-███████████████████████
-███████████████████████`,
-            
-            `WELCOME TO 
-STOCK TRADING
-        
-Each round: 30s
-
-Unsold stocks
-EXPIRE at $0
-value!
-
-Buy & sell fast!`,
-
-            `Buy (q)
-Sell (a)
-
-Press ENTER
-to START`
+            // Screen 1: Title
+            [
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "          > SUPERSELLER8086 <           ",
+                "                                        ",
+                "          █████████████████              ",
+                "          █████████████████              ",
+                "          █████████████████              ",
+                "          █████████████████              ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "        Press ENTER to continue         "
+            ],
+            // Screen 2: Warning
+            [
+                "                                        ",
+                "                                        ",
+                "        WELCOME TO STOCK TRADING        ",
+                "                                        ",
+                "    WARNING: Each round lasts 30 secs!  ",
+                "                                        ",
+                "    Unsold stocks will EXPIRE and       ",
+                "    become WORTHLESS ($0 value)         ",
+                "                                        ",
+                "    Buy & sell quickly to maximize      ",
+                "    profits before expiration!          ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "        Press ENTER to continue         "
+            ],
+            // Screen 3: Instructions
+            [
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "           BUY (Q) / SELL (A)           ",
+                "                                        ",
+                "       Watch the price chart and        ",
+                "       decide when to buy or sell       ",
+                "                                        ",
+                "       Type quantity after pressing     ",
+                "       Q or A, then press ENTER         ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "                                        ",
+                "        Press ENTER to continue         "
+            ]
         ];
 
         let currentScreen = 0;
         let waitingForEnter = false;
+        let gameActive = false;
 
-        function showNextScreen() {
-            if (currentScreen < introScreens.length) {
-                const scrollColumns = document.getElementById('scrollColumns');
-                scrollColumns.innerHTML = '';
-                
-                // Split text into columns
-                const lines = introScreens[currentScreen].split('\n');
-                const columnCount = 3;
-                const linesPerColumn = Math.ceil(lines.length / columnCount);
-                
-                for (let i = 0; i < columnCount; i++) {
-                    const columnText = lines.slice(i * linesPerColumn, (i + 1) * linesPerColumn).join('\n');
-                    const column = document.createElement('div');
-                    column.className = 'scroll-column';
-                    column.textContent = columnText;
-                    scrollColumns.appendChild(column);
-                }
-
-                currentScreen++;
-                
-                if (currentScreen === introScreens.length) {
-                    waitingForEnter = true;
-                } else {
-                    setTimeout(showNextScreen, 6100);
-                }
+        function renderGrid(grid, container, animate = false) {
+            container.innerHTML = '';
+            grid.forEach((line, rowIdx) => {
+                const chars = line.split('');
+                chars.forEach((char, colIdx) => {
+                    const cell = document.createElement('div');
+                    cell.className = animate ? 'console-cell' : 'game-cell';
+                    cell.textContent = char;
+                    
+                    if (animate) {
+                        // Staggered animation by column
+                        const delay = colIdx * 0.02;
+                        cell.style.animation = `slideDown 0.5s ease-out ${delay}s both`;
+                    }
+                    
+                    container.appendChild(cell);
+                });
+            });
+            
+            // Add keyframes if animating
+            if (animate && !document.querySelector('style[data-animation]')) {
+                const style = document.createElement('style');
+                style.setAttribute('data-animation', 'true');
+                style.textContent = `
+                    @keyframes slideDown {
+                        from {
+                            transform: translateY(-100%);
+                            opacity: 0;
+                        }
+                        to {
+                            transform: translateY(0);
+                            opacity: 1;
+                        }
+                    }
+                `;
+                document.head.appendChild(style);
             }
+        }
+
+        function showIntroScreen() {
+            if (currentScreen < introScreens.length) {
+                const grid = introScreens[currentScreen];
+                renderGrid(grid, document.getElementById('introConsole'), true);
+                waitingForEnter = true;
+                currentScreen++;
+            } else {
+                startGameplay();
+            }
+        }
+
+        function startGameplay() {
+            document.getElementById('overlay').classList.add('hidden');
+            gameActive = true;
+            startRound();
         }
 
         // Stock data
@@ -376,68 +389,94 @@ to START`
         let roundTime = 30;
         let roundInterval = null;
         let currentMode = null; // 'buy' or 'sell'
-        let roundActive = false;
+        let modeActive = false;
+
+        function buildGameGrid() {
+            const grid = Array(30).fill(null).map(() => Array(40).fill(' '));
+            
+            // Header: price and timer
+            const header = `RED $${stock.price.toFixed(2)}`.padEnd(20);
+            const timer = `${roundTime}s`.padStart(20);
+            const topLine = header + timer;
+            topLine.split('').forEach((char, i) => {
+                if (i < 40) grid[0][i] = char;
+            });
+
+            // Separator
+            grid[1] = Array(40).fill('─');
+
+            // Chart (rows 3-18)
+            const chartStart = 3;
+            const chartHeight = 12;
+            const history = stock.history.slice(-40);
+            const maxPrice = Math.max(...history);
+            const minPrice = Math.min(...history);
+            const range = maxPrice - minPrice || 1;
+
+            for (let i = 0; i < chartHeight; i++) {
+                for (let j = 0; j < Math.min(history.length, 38); j++) {
+                    const normalized = (history[j] - minPrice) / range;
+                    const barHeight = Math.round(normalized * (chartHeight - 1));
+                    grid[chartStart + chartHeight - 1 - i][j + 1] = barHeight >= (chartHeight - 1 - i) ? '·' : ' ';
+                }
+            }
+
+            // Status line
+            grid[16] = Array(40).fill('─');
+
+            // Buy/Sell mode display
+            if (modeActive) {
+                const modeText = currentMode === 'buy' ? 'BUY MODE' : 'SELL MODE';
+                modeText.split('').forEach((char, i) => {
+                    if (i < 40) grid[18][i] = char;
+                });
+            }
+
+            // Stats (rows 19-25)
+            const cash = `Cash: $${player.cash.toFixed(2)}`.substring(0, 40);
+            const shares = `Shares: ${player.shares}`.substring(0, 40);
+            const value = `Value: $${(player.shares * stock.price).toFixed(2)}`.substring(0, 40);
+            
+            cash.split('').forEach((char, i) => { if (i < 40) grid[20][i] = char; });
+            shares.split('').forEach((char, i) => { if (i < 40) grid[21][i] = char; });
+            value.split('').forEach((char, i) => { if (i < 40) grid[22][i] = char; });
+
+            // Instructions
+            grid[27] = Array(40).fill('─');
+            const instruct1 = 'Q: Buy | A: Sell';
+            instruct1.split('').forEach((char, i) => { if (i < 40) grid[28][i] = char; });
+
+            const instruct2 = modeActive ? 'Enter qty and press ENTER' : 'Press Q or A to trade';
+            instruct2.split('').forEach((char, i) => { if (i < 40) grid[29][i] = char; });
+
+            return grid;
+        }
+
+        function updateGameDisplay() {
+            const grid = buildGameGrid();
+            const gridStr = grid.map(row => row.join('')).join('\n');
+            renderGrid(grid, document.getElementById('gameConsole'), false);
+        }
 
         function updateStockPrice() {
             const changePercent = (Math.random() - 0.5) * stock.volatility;
             const newPrice = Math.max(1, stock.price * (1 + changePercent));
             stock.price = parseFloat(newPrice.toFixed(2));
             stock.history.push(stock.price);
-            
-            document.getElementById('redPrice').textContent = `$${stock.price.toFixed(2)}`;
-            updateMarketDisplay();
-        }
-
-        function displayStockChart(height = 12) {
-            const history = stock.history.slice(-40);
-            const maxPrice = Math.max(...history);
-            const minPrice = Math.min(...history);
-            const range = maxPrice - minPrice || 1;
-
-            let chart = '';
-            for (let i = 0; i < height; i++) {
-                let line = '';
-                for (let j = 0; j < history.length; j++) {
-                    const normalized = (history[j] - minPrice) / range;
-                    const barHeight = Math.round(normalized * (height - 1));
-                    
-                    if (barHeight >= (height - 1 - i)) {
-                        line += '·';
-                    } else {
-                        line += ' ';
-                    }
-                }
-                chart += line + '\n';
-            }
-            return chart;
-        }
-
-        function updateMarketDisplay() {
-            let display = displayStockChart(12);
-            document.getElementById('stockMarket').textContent = display;
-            document.getElementById('stockMarket').scrollTop = document.getElementById('stockMarket').scrollHeight;
-        }
-
-        function updatePlayerStats() {
-            const portfolioValue = player.shares * stock.price;
-            document.getElementById('playerStats').textContent = 
-                `Cash: $${player.cash.toFixed(2)} | Shares: ${player.shares} | Value: $${portfolioValue.toFixed(2)}`;
+            updateGameDisplay();
         }
 
         function startRound() {
-            roundActive = true;
             roundTime = 30;
             stock.history = [stock.price];
-            updateMarketDisplay();
-            updatePlayerStats();
-            waitingForEnter = false;
+            modeActive = false;
+            updateGameDisplay();
 
             if (roundInterval) clearInterval(roundInterval);
 
             roundInterval = setInterval(() => {
                 roundTime--;
-                document.getElementById('roundTimer').textContent = roundTime;
-                updateStockPrice();
+                updateGameDisplay();
 
                 if (roundTime <= 0) {
                     endRound();
@@ -447,8 +486,7 @@ to START`
 
         function endRound() {
             clearInterval(roundInterval);
-            roundActive = false;
-            currentMode = null;
+            gameActive = false;
             
             const portfolioValue = player.shares * stock.price;
             const totalValue = player.cash + portfolioValue;
@@ -461,12 +499,12 @@ Final Price: $${stock.price.toFixed(2)}
 Unsold Shares: ${player.shares}
 
 Cash: $${player.cash.toFixed(2)}
-Portfolio Value: $${portfolioValue.toFixed(2)}
+Portfolio: $${portfolioValue.toFixed(2)}
 Total: $${totalValue.toFixed(2)}
 
 Profit: $${profit.toFixed(2)} (${profitPercent}%)`;
 
-            document.getElementById('resultsContent').textContent = resultsText;
+            document.getElementById('resultsText').textContent = resultsText;
             document.getElementById('resultsScreen').classList.add('show');
         }
 
@@ -479,71 +517,60 @@ Profit: $${profit.toFixed(2)} (${profitPercent}%)`;
             stock.price = 45;
             stock.history = [45];
             stock.volatility = 0.15;
+            gameActive = true;
             
             startRound();
         }
 
         function buyStock(quantity) {
-            if (!quantity || quantity <= 0) return 'Invalid quantity!';
+            if (!quantity || quantity <= 0) return false;
 
             const cost = stock.price * quantity;
-            if (cost > player.cash) {
-                return `Insufficient funds!`;
-            }
+            if (cost > player.cash) return false;
 
             player.cash -= cost;
             player.shares += quantity;
-            updatePlayerStats();
-            currentMode = null;
-            document.getElementById('commandInput').value = '';
-            return `✓ Bought ${quantity} RED @ $${stock.price.toFixed(2)}`;
+            return true;
         }
 
         function sellStock(quantity) {
-            if (!quantity || quantity <= 0) return 'Invalid quantity!';
-            if (player.shares < quantity) {
-                return `Only have ${player.shares} shares!`;
-            }
+            if (!quantity || quantity <= 0) return false;
+            if (player.shares < quantity) return false;
 
             const proceeds = stock.price * quantity;
             player.cash += proceeds;
             player.shares -= quantity;
-            updatePlayerStats();
-            currentMode = null;
-            document.getElementById('commandInput').value = '';
-            return `✓ Sold ${quantity} RED for $${proceeds.toFixed(2)}`;
+            return true;
         }
 
         function submitCommand() {
             if (waitingForEnter) {
-                document.getElementById('overlay').classList.add('hidden');
-                startRound();
+                waitingForEnter = false;
+                showIntroScreen();
                 return;
             }
 
-            if (!roundActive) return;
+            if (!gameActive) return;
 
             const input = document.getElementById('commandInput');
             const command = input.value.trim();
 
             if (!command) return;
 
-            let output = '';
+            let success = false;
             
             if (currentMode === 'buy') {
                 const quantity = parseInt(command);
-                output = buyStock(quantity);
+                success = buyStock(quantity);
             } else if (currentMode === 'sell') {
                 const quantity = parseInt(command);
-                output = sellStock(quantity);
-            } else {
-                output = 'Unknown command.';
+                success = sellStock(quantity);
             }
 
-            if (output) {
-                const stockMarket = document.getElementById('stockMarket');
-                stockMarket.textContent += '\n$ ' + command + '\n' + output + '\n';
-                stockMarket.scrollTop = stockMarket.scrollHeight;
+            if (success) {
+                modeActive = false;
+                currentMode = null;
+                updateGameDisplay();
             }
 
             input.value = '';
@@ -552,35 +579,35 @@ Profit: $${profit.toFixed(2)} (${profitPercent}%)`;
 
         // Handle Q and A key presses
         document.addEventListener('keydown', function(e) {
-            if (!roundActive) return;
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                submitCommand();
+                return;
+            }
+
+            if (!gameActive) return;
             
             if (e.key === 'q' || e.key === 'Q') {
                 e.preventDefault();
                 currentMode = 'buy';
-                document.getElementById('commandInput').focus();
-                document.getElementById('commandInput').value = '';
+                modeActive = true;
+                updateGameDisplay();
             } else if (e.key === 'a' || e.key === 'A') {
                 e.preventDefault();
                 currentMode = 'sell';
-                document.getElementById('commandInput').focus();
-                document.getElementById('commandInput').value = '';
+                modeActive = true;
+                updateGameDisplay();
             }
         });
 
-        document.getElementById('commandInput').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                submitCommand();
-            }
-        });
-
-        function initializeGame() {
-            updateMarketDisplay();
-            updatePlayerStats();
-            document.getElementById('commandInput').focus();
-        }
+        // Create dummy input for Enter handling
+        const dummyInput = document.createElement('input');
+        dummyInput.id = 'commandInput';
+        dummyInput.style.display = 'none';
+        document.body.appendChild(dummyInput);
 
         // Start intro sequence
-        showNextScreen();
+        showIntroScreen();
     </script>
 </body>
 </html>
