@@ -18,7 +18,7 @@
 
         body {
             background-color: #0a0e27;
-            color: #00ff41;
+            color: #ffffff;
             font-family: 'Courier New', monospace;
             display: flex;
             justify-content: center;
@@ -45,24 +45,34 @@
             display: none;
         }
 
-        .scroll-text {
+        .scroll-columns {
+            display: flex;
+            gap: 20px;
+            width: 100%;
+            height: 100%;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .scroll-column {
             font-size: 14px;
             text-align: center;
             white-space: pre;
-            text-shadow: 0 0 10px #00ff41;
+            text-shadow: 0 0 10px #ffffff;
             letter-spacing: 0px;
             line-height: 1.2;
-            max-width: 95vw;
+            max-width: 300px;
             padding: 20px;
             overflow: hidden;
             transform: translateY(-150vh);
         }
 
-        .scroll-text.active {
-            animation: scrollDown 6s ease-in-out forwards;
-        }
+        .scroll-column:nth-child(1) { animation: columnScroll 6s ease-in-out 0s forwards; }
+        .scroll-column:nth-child(2) { animation: columnScroll 6s ease-in-out 0.3s forwards; }
+        .scroll-column:nth-child(3) { animation: columnScroll 6s ease-in-out 0.6s forwards; }
 
-        @keyframes scrollDown {
+        @keyframes columnScroll {
             0% {
                 transform: translateY(-150vh);
             }
@@ -77,46 +87,53 @@
             }
         }
 
+        .game-wrapper {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
         .game-container {
             width: 100%;
-            max-width: 800px;
+            aspect-ratio: 1;
+            max-width: 600px;
             background-color: #1a1f3a;
-            border: 2px solid #00ff41;
+            border: 3px solid #ffffff;
             border-radius: 5px;
-            box-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
             display: flex;
             flex-direction: column;
-            height: 90vh;
-            max-height: 600px;
-            margin: 0 10px;
         }
 
         .game-header {
             background-color: #0a0e27;
-            border-bottom: 2px solid #00ff41;
-            padding: 10px;
+            border-bottom: 2px solid #ffffff;
+            padding: 15px;
             text-align: center;
-            font-size: 16px;
+            font-size: 18px;
             font-weight: bold;
-            text-shadow: 0 0 10px #00ff41;
+            text-shadow: 0 0 10px #ffffff;
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
 
         .timer {
-            font-size: 14px;
-            color: #00ff41;
+            font-size: 16px;
+            color: #ffffff;
         }
 
         .stock-market {
             flex: 1;
             overflow-y: auto;
             padding: 15px;
-            border-bottom: 2px solid #00ff41;
+            border-bottom: 2px solid #ffffff;
             white-space: pre;
             word-wrap: break-word;
-            font-size: 11px;
+            font-size: 12px;
             line-height: 1.2;
             font-family: 'Courier New', monospace;
         }
@@ -130,7 +147,7 @@
         }
 
         .stock-market::-webkit-scrollbar-thumb {
-            background: #00ff41;
+            background: #ffffff;
             border-radius: 4px;
         }
 
@@ -150,8 +167,8 @@
         .game-input {
             flex: 1;
             background-color: #1a1f3a;
-            border: 1px solid #00ff41;
-            color: #00ff41;
+            border: 1px solid #ffffff;
+            color: #ffffff;
             padding: 10px;
             font-family: 'Courier New', monospace;
             font-size: 14px;
@@ -159,11 +176,11 @@
         }
 
         .game-input:focus {
-            box-shadow: 0 0 5px #00ff41;
+            box-shadow: 0 0 5px #ffffff;
         }
 
         button {
-            background-color: #00ff41;
+            background-color: #ffffff;
             color: #0a0e27;
             border: none;
             padding: 10px 20px;
@@ -175,8 +192,8 @@
         }
 
         button:hover {
-            background-color: #00cc33;
-            box-shadow: 0 0 10px rgba(0, 255, 65, 0.5);
+            background-color: #cccccc;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
         }
 
         button:active {
@@ -185,48 +202,102 @@
 
         .command-info {
             font-size: 12px;
-            color: #00ff41;
+            color: #ffffff;
             margin-top: 10px;
             text-align: center;
         }
 
         .player-stats {
             background-color: #0a0e27;
-            border-top: 1px solid #00ff41;
+            border-top: 1px solid #ffffff;
             padding: 10px 15px;
-            font-size: 11px;
+            font-size: 12px;
             display: flex;
             justify-content: space-around;
             flex-wrap: wrap;
             gap: 10px;
         }
+
+        .results-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #0a0e27;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 999;
+            flex-direction: column;
+            gap: 30px;
+            padding: 20px;
+        }
+
+        .results-screen.show {
+            display: flex;
+        }
+
+        .results-content {
+            text-align: center;
+            white-space: pre;
+            font-size: 16px;
+            line-height: 1.6;
+            max-width: 500px;
+            text-shadow: 0 0 10px #ffffff;
+        }
+
+        .results-button {
+            background-color: #ffffff;
+            color: #0a0e27;
+            border: none;
+            padding: 15px 30px;
+            font-weight: bold;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            font-size: 16px;
+            border-radius: 3px;
+            transition: all 0.3s;
+        }
+
+        .results-button:hover {
+            background-color: #cccccc;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        }
     </style>
 </head>
 <body>
     <div class="fullscreen-overlay" id="overlay">
-        <div class="scroll-text" id="scrollText"></div>
+        <div class="scroll-columns" id="scrollColumns"></div>
     </div>
 
-    <div class="game-container">
-        <div class="game-header">
-            <span>> RED <span id="redPrice">$45.00</span> <</span>
-            <span class="timer">Time: <span id="roundTimer">30</span>s</span>
-        </div>
-        <div class="stock-market" id="stockMarket"></div>
-        <div class="player-stats" id="playerStats">Cash: $1000 | Shares: 0 | Value: $0</div>
-        <div class="game-input-area">
-            <div class="command-row">
-                <input 
-                    type="text" 
-                    class="game-input" 
-                    id="commandInput" 
-                    placeholder="Enter quantity or command..."
-                    autocomplete="off"
-                >
-                <button onclick="submitCommand()">SUBMIT</button>
+    <div class="results-screen" id="resultsScreen">
+        <div class="results-content" id="resultsContent"></div>
+        <button class="results-button" onclick="startNewRound()">NEXT ROUND</button>
+    </div>
+
+    <div class="game-wrapper">
+        <div class="game-container">
+            <div class="game-header">
+                <span>> RED <span id="redPrice">$45.00</span> <</span>
+                <span class="timer">Time: <span id="roundTimer">30</span>s</span>
             </div>
-            <div class="command-info">
-                Q: Buy | A: Sell
+            <div class="stock-market" id="stockMarket"></div>
+            <div class="player-stats" id="playerStats">Cash: $1000 | Shares: 0 | Value: $0</div>
+            <div class="game-input-area">
+                <div class="command-row">
+                    <input 
+                        type="text" 
+                        class="game-input" 
+                        id="commandInput" 
+                        placeholder="Enter quantity..."
+                        autocomplete="off"
+                    >
+                    <button onclick="submitCommand()">SUBMIT</button>
+                </div>
+                <div class="command-info">
+                    Q: Buy | A: Sell
+                </div>
             </div>
         </div>
     </div>
@@ -240,39 +311,52 @@
 ███████████████████████
 ███████████████████████`,
             
-            `WELCOME TO STOCK TRADING
+            `WELCOME TO 
+STOCK TRADING
         
-WARNING: Each round lasts 30 seconds!
+Each round: 30s
 
-Any unsold stocks at the end of 
-each round will EXPIRE and become
-WORTHLESS ($0 value).
+Unsold stocks
+EXPIRE at $0
+value!
 
-You must buy and sell quickly to
-maximize profits before expiration!`,
+Buy & sell fast!`,
 
             `Buy (q)
-Sell (a)`
+Sell (a)
+
+Press ENTER
+to START`
         ];
 
         let currentScreen = 0;
+        let waitingForEnter = false;
 
         function showNextScreen() {
             if (currentScreen < introScreens.length) {
-                const scrollText = document.getElementById('scrollText');
-                scrollText.textContent = introScreens[currentScreen];
-                scrollText.classList.remove('active');
+                const scrollColumns = document.getElementById('scrollColumns');
+                scrollColumns.innerHTML = '';
                 
-                // Force reflow to restart animation
-                void scrollText.offsetWidth;
+                // Split text into columns
+                const lines = introScreens[currentScreen].split('\n');
+                const columnCount = 3;
+                const linesPerColumn = Math.ceil(lines.length / columnCount);
                 
-                scrollText.classList.add('active');
+                for (let i = 0; i < columnCount; i++) {
+                    const columnText = lines.slice(i * linesPerColumn, (i + 1) * linesPerColumn).join('\n');
+                    const column = document.createElement('div');
+                    column.className = 'scroll-column';
+                    column.textContent = columnText;
+                    scrollColumns.appendChild(column);
+                }
+
                 currentScreen++;
-                setTimeout(showNextScreen, 6100);
-            } else {
-                document.getElementById('overlay').classList.add('hidden');
-                initializeGame();
-                startRound();
+                
+                if (currentScreen === introScreens.length) {
+                    waitingForEnter = true;
+                } else {
+                    setTimeout(showNextScreen, 6100);
+                }
             }
         }
 
@@ -286,12 +370,13 @@ Sell (a)`
         let player = {
             cash: 1000,
             shares: 0,
-            trades: []
+            startingCash: 1000
         };
 
         let roundTime = 30;
         let roundInterval = null;
         let currentMode = null; // 'buy' or 'sell'
+        let roundActive = false;
 
         function updateStockPrice() {
             const changePercent = (Math.random() - 0.5) * stock.volatility;
@@ -340,9 +425,12 @@ Sell (a)`
         }
 
         function startRound() {
+            roundActive = true;
             roundTime = 30;
+            stock.history = [stock.price];
             updateMarketDisplay();
             updatePlayerStats();
+            waitingForEnter = false;
 
             if (roundInterval) clearInterval(roundInterval);
 
@@ -359,16 +447,39 @@ Sell (a)`
 
         function endRound() {
             clearInterval(roundInterval);
+            roundActive = false;
             currentMode = null;
             
-            let message = '⚠️  END OF ROUND ⚠️\n\nAll unsold stocks EXPIRED!\n';
-            
-            if (player.shares > 0) {
-                message += `Lost ${player.shares} RED shares\n`;
-                player.shares = 0;
-            }
+            const portfolioValue = player.shares * stock.price;
+            const totalValue = player.cash + portfolioValue;
+            const profit = totalValue - player.startingCash;
+            const profitPercent = ((profit / player.startingCash) * 100).toFixed(1);
 
-            alert(message + '\nStarting new round...');
+            let resultsText = `ROUND OVER
+
+Final Price: $${stock.price.toFixed(2)}
+Unsold Shares: ${player.shares}
+
+Cash: $${player.cash.toFixed(2)}
+Portfolio Value: $${portfolioValue.toFixed(2)}
+Total: $${totalValue.toFixed(2)}
+
+Profit: $${profit.toFixed(2)} (${profitPercent}%)`;
+
+            document.getElementById('resultsContent').textContent = resultsText;
+            document.getElementById('resultsScreen').classList.add('show');
+        }
+
+        function startNewRound() {
+            document.getElementById('resultsScreen').classList.remove('show');
+            
+            player.cash = 1000;
+            player.shares = 0;
+            player.startingCash = 1000;
+            stock.price = 45;
+            stock.history = [45];
+            stock.volatility = 0.15;
+            
             startRound();
         }
 
@@ -377,7 +488,7 @@ Sell (a)`
 
             const cost = stock.price * quantity;
             if (cost > player.cash) {
-                return `Insufficient funds! Need $${cost.toFixed(2)}, have $${player.cash.toFixed(2)}`;
+                return `Insufficient funds!`;
             }
 
             player.cash -= cost;
@@ -404,6 +515,14 @@ Sell (a)`
         }
 
         function submitCommand() {
+            if (waitingForEnter) {
+                document.getElementById('overlay').classList.add('hidden');
+                startRound();
+                return;
+            }
+
+            if (!roundActive) return;
+
             const input = document.getElementById('commandInput');
             const command = input.value.trim();
 
@@ -433,6 +552,8 @@ Sell (a)`
 
         // Handle Q and A key presses
         document.addEventListener('keydown', function(e) {
+            if (!roundActive) return;
+            
             if (e.key === 'q' || e.key === 'Q') {
                 e.preventDefault();
                 currentMode = 'buy';
