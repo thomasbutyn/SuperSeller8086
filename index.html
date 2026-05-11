@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SuperSeller8086 - Stock Trading Game</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        * { margin: 0; padding: 0; box-sizing: border-box; cursor: none !important; }
         html, body { width: 100%; height: 100%; background: #0a0e27; }
 
         body {
@@ -31,7 +31,9 @@
             width: 100%;
             height: 100%;
             background: #1a1f3a;
-            cursor: pointer;
+            touch-action: none;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
         }
 
         .text-overlay {
@@ -48,9 +50,8 @@
             color: transparent;
             background: transparent;
             font-family: monospace;
-            user-select: text;
-            pointer-events: auto;
-            cursor: text;
+            user-select: none;
+            pointer-events: none;
         }
 
         .screen {
@@ -71,9 +72,23 @@
             border-radius: 3px; cursor: pointer; transition: all 0.3s;
         }
         .results-button:hover { background: #cccccc; box-shadow: 0 0 10px rgba(255,255,255,0.5); }
+        #cursor { position: fixed; top: 0; left: 0; pointer-events: none; z-index: 99999; }
     </style>
 </head>
 <body>
+
+<div id="cursor"><svg id="cursorSvg" xmlns="http://www.w3.org/2000/svg"></svg></div>
+
+<div id="qtyModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);flex-direction:column;justify-content:center;align-items:center;gap:14px;z-index:2000;">
+    <div style="background:#1a1f3a;border:2px solid #fff;border-radius:5px;padding:24px 32px;display:flex;flex-direction:column;align-items:center;gap:14px;font-family:monospace;color:#fff;min-width:240px;">
+        <div id="qtyLabel" style="font-size:14px;letter-spacing:1px;">ENTER QUANTITY</div>
+        <input type="number" id="qtyInput" min="1" value="1" inputmode="numeric" style="background:#0a0e27;color:#fff;border:1px solid #fff;border-radius:3px;font-family:monospace;font-size:20px;width:120px;text-align:center;padding:6px;" />
+        <div style="display:flex;gap:12px;">
+            <button onclick="closeQtyModal()" style="background:#555;color:#fff;border:none;padding:10px 22px;font-family:monospace;font-size:12px;border-radius:3px;">CANCEL</button>
+            <button onclick="confirmQty()" style="background:#fff;color:#0a0e27;border:none;padding:10px 22px;font-family:monospace;font-size:12px;border-radius:3px;">OK</button>
+        </div>
+    </div>
+</div>
 
 <div class="screen" id="introScreen">
     <div class="console-wrap" id="introWrap">
@@ -171,7 +186,7 @@ class ConsoleRenderer {
         const cw = this.canvas.width  || this.canvas.offsetWidth;
         const ch = this.canvas.height || this.canvas.offsetHeight;
         const charH = ch / ROWS;
-        const fontSize = charH * 0.72; // approximate match to canvas font size
+        const fontSize = charH * 0.95; // match canvas font size
 
         Array.from(this.overlay.children).forEach((div, r) => {
             div.style.top        = `${(r / ROWS * 100)}%`;
@@ -217,9 +232,9 @@ class ConsoleRenderer {
          * renders quickly, but the key point is that we don't use font metrics
          * for positioning — x/y come from col*charW and row*charH.
          */
-        const fontSize = Math.floor(charH * 0.72);
+        const fontSize = Math.floor(charH * 0.95);
         ctx.font = `${fontSize}px "Courier New", Courier, monospace`;
-        ctx.textAlign    = 'left';
+        ctx.textAlign    = 'center';
         ctx.textBaseline = 'middle';
 
         const overlayRows = this.overlay.children;
@@ -231,20 +246,14 @@ class ConsoleRenderer {
                 const ch_  = grid[r][c];
                 const color = colorGrid?.[r]?.[c] ?? null;
 
-                // Glow / shadow
                 const glowColor = color ?? '#ffffff';
-                ctx.shadowColor = glowColor;
-                ctx.shadowBlur  = color ? 6 : 3;
-
                 ctx.fillStyle = color ?? '#ffffff';
-
-                /*
-                 * KEY: x position is col * charW. This is arithmetic, not font-metric.
-                 * Every character in every row lands at the same x for a given column,
-                 * regardless of what glyph it is or how wide the font thinks it is.
-                 * We draw with textAlign='left' from the left edge of the cell.
-                 */
-                ctx.fillText(ch_, c * charW, r * charH + charH / 2);
+                const x = c * charW + charW / 2, y = r * charH + charH / 2;
+                ctx.shadowColor = glowColor;
+                ctx.shadowBlur = 10; ctx.globalAlpha = 0.4; ctx.fillText(ch_, x, y);
+                ctx.shadowBlur = 5;  ctx.globalAlpha = 0.7; ctx.fillText(ch_, x, y);
+                ctx.shadowBlur = 2;  ctx.globalAlpha = 1.0; ctx.fillText(ch_, x, y);
+                ctx.shadowBlur = 0;  ctx.fillText(ch_, x, y);
 
                 rowText += ch_;
             }
@@ -256,6 +265,7 @@ class ConsoleRenderer {
         }
 
         ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
     }
 }
 
@@ -320,20 +330,33 @@ function drawKeyboard(g, col) {
     // ── Colour counters (rows KB_TOP-3 to KB_TOP-1, 4 boxes each 10 cols wide) ──
     const counterTop = KB_TOP - 2;
     const COUNTERS = [
-        { val: player.green,  norm: '#22cc22', c1: 0,  c2: 9  },
-        { val: player.red,    norm: '#cc2222', c1: 10, c2: 19 },
-        { val: player.blue,   norm: '#2255cc', c1: 20, c2: 29 },
-        { val: player.yellow, norm: '#ccaa00', c1: 30, c2: 39 },
+        { val: player.green,  norm: '#22cc22', bright: '#88ff88', c1: 0,  c2: 9  },
+        { val: player.red,    norm: '#cc2222', bright: '#ff8888', c1: 10, c2: 19 },
+        { val: player.blue,   norm: '#2255cc', bright: '#88aaff', c1: 20, c2: 29 },
+        { val: player.yellow, norm: '#ccaa00', bright: '#ffee88', c1: 30, c2: 39 },
     ];
-    COUNTERS.forEach(({ val, norm, c1, c2 }) => {
-        const setC = (r, c, ch) => { if (r >= 0 && r < ROWS && c >= 0 && c < COLS) { g[r][c] = ch; col[r][c] = norm; } };
+    COUNTERS.forEach(({ val, norm, bright, c1, c2 }) => {
+        const setC = (r, c, ch, clr) => { if (r >= 0 && r < ROWS && c >= 0 && c < COLS) { g[r][c] = ch; col[r][c] = clr; } };
         const r1 = counterTop, r2 = counterTop + 2;
-        // Border
-        setC(r1, c1, '┌'); setC(r1, c2, '┐');
-        setC(r2, c1, '└'); setC(r2, c2, '┘');
-        for (let c = c1 + 1; c < c2; c++) { setC(r1, c, '─'); setC(r2, c, '─'); }
-        for (let r = r1 + 1; r < r2; r++) { setC(r, c1, '│'); setC(r, c2, '│'); }
-        // Value centered on middle row
+        // Ordered perimeter: top L→R, right T→B, bottom R→L, left B→T
+        const perim = [];
+        for (let c = c1; c <= c2; c++) perim.push([r1, c]);
+        for (let r = r1 + 1; r <= r2; r++) perim.push([r, c2]);
+        for (let c = c2 - 1; c >= c1; c--) perim.push([r2, c]);
+        for (let r = r2 - 1; r > r1; r--) perim.push([r, c1]);
+        const P = perim.length;
+        const cornerMap = { [`${r1},${c1}`]:'┌', [`${r1},${c2}`]:'┐', [`${r2},${c1}`]:'└', [`${r2},${c2}`]:'┘' };
+        const edgeChar = (r, c) => (r === r1 || r === r2) ? '─' : '│';
+        const t = ((counterBorderAnim.tick % P) + P) % P;
+        const spinOffset = ((Math.floor(counterBorderAnim.spinAngle) % P) + P) % P;
+        perim.forEach(([r, c], i) => {
+            const key = `${r},${c}`;
+            const ch  = cornerMap[key] ?? edgeChar(r, c);
+            const arcLen = Math.floor(P / 4);
+            const lit = (((i - t) % P + P) % P) < arcLen;
+            setC(r, c, ch, lit ? bright : norm);
+        });
+        // Value
         const midR = r1 + 1;
         const text = String(val);
         const midC = Math.floor((c1 + c2) / 2);
@@ -398,18 +421,19 @@ function wireCanvasKeyboard(canvas) {
         const hit = hitTestKeyboard(canvas, (px - rect.left) * scaleX, (py - rect.top) * scaleY);
         if (!hit) return;
         flashKey(hit.key);
+        if (hit.key === 'Enter') { submitCommand(); return; }
         document.dispatchEvent(new KeyboardEvent('keydown', { key: hit.key, bubbles: true }));
     };
     canvas.addEventListener('pointerdown', e => { e.preventDefault(); fire(e.clientX, e.clientY); });
 }
 
 // ─── BROADWAY LIGHTS ──────────────────────────────────────────────────────────
-const LIGHTS      = { r1: 2, r2: 25, c1: 2, c2: 37 };
+const LIGHTS      = { r1: 2, r2: 25, c1: 1, c2: 38 };
 const RINGS  = [
-    { rect: { r1: 11, r2: 17, c1: 11, c2: 28 }, on: '#33ff33', off: '#002a00' },
-    { rect: { r1:  9, r2: 19, c1:  9, c2: 30 }, on: '#ff3333', off: '#2a0000' },
-    { rect: { r1:  7, r2: 21, c1:  7, c2: 32 }, on: '#3399ff', off: '#00102a' },
-    { rect: { r1:  5, r2: 23, c1:  5, c2: 34 }, on: '#ffee33', off: '#2a2500' },
+    { rect: { r1: 11, r2: 17, c1: 10, c2: 29 }, on: '#33ff33', off: '#002a00' },
+    { rect: { r1:  9, r2: 19, c1:  8, c2: 31 }, on: '#ff3333', off: '#2a0000' },
+    { rect: { r1:  7, r2: 21, c1:  6, c2: 33 }, on: '#3399ff', off: '#00102a' },
+    { rect: { r1:  5, r2: 23, c1:  4, c2: 35 }, on: '#ffee33', off: '#2a2500' },
 ];
 
 function perimeterPositions({ r1, r2, c1, c2 }) {
@@ -441,112 +465,138 @@ function drawRect(g, { r1, r2, c1, c2 }, ch) {
 function buildBroadwayGrid(tick) {
     const g   = makeGrid();
     const col = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
-    // SEQ: green(0), red(1), blue(2), yellow(3), then 4 empty slots
-    // 3 consecutive steps lit at once → wave builds up then fades into a brief gap
-    const SEQ = [0, 1, 2, 3, -1, -1, -1, -1];
-    const CYCLE = SEQ.length;
-    const activeSteps = new Set([tick % CYCLE, (tick + 1) % CYCLE, (tick + 2) % CYCLE]);
-    const whiteOn = false;
 
-    RINGS.forEach(({ rect, on, off }, i) => {
-        const seqIdx = SEQ.indexOf(i);
-        paintRing(col, rect, seqIdx !== -1 && activeSteps.has(seqIdx) ? on : off);
-    });
+    // ── RINGS: independent animation on ringTick ──────────────────────────────
+    // Pattern: 4 cycles of radial grow, then 1 spin rotation (32 frames), repeat.
+    // Radial grow: each cycle = 8 ticks (4 rings × 2 ticks each: on then off)
+    // 4 grow cycles = 32 ticks. 1 spin = 32 ticks. Total pattern = 64 ticks.
+    const RING_CYCLE = 65;
+    const rt = ringTick % RING_CYCLE;
+
+    if (rt < 32) {
+        // Radial grow phase: 4 cycles × 8 ticks each
+        const growCycle = rt % 8; // 0–7 within each grow cycle
+        // Each ring lights for 2 ticks, innermost first: ring0@0-1, ring1@2-3, ring2@4-5, ring3@6-7
+        RINGS.forEach(({ rect, on, off }, i) => {
+            const lit = growCycle >= i * 2 && growCycle < i * 2 + 2;
+            paintRing(col, rect, lit ? on : off);
+        });
+    } else {
+        // Spin phase: 32 frames = 1 full rotation, 1/8 arc
+        const spinTick = rt - 32;
+        RINGS.forEach(({ rect, on, off }) => {
+            const pts = perimeterPositions(rect);
+            const P = pts.length;
+            // 2 rotations in 33 steps: step size = 2P/32, giving 33 evenly spaced frames
+            // that land exactly back at start on frame 32 (the +1 closing frame)
+            const offset = Math.floor(spinTick * 2 * P / 32) % P;
+            const arcLen = Math.max(1, Math.floor(P / 3));
+            pts.forEach(([r, c], i) => {
+                const lit = (((i - offset) % P + P) % P) < arcLen;
+                if (r >= 0 && r < ROWS && c >= 0 && c < COLS) col[r][c] = lit ? on : off;
+            });
+        });
+    }
+
+    // ── SUPER SELLER 8086 + rotating slides: independent animation on ssTick ──
+    // Each slide: 16 scroll-in, 6 flash, 16 reveal line1 L→R, 6 reveal line2 L→R,
+    //             6 final flash, 4 hold, 16 scroll-out, 4 blank = 74 ticks/slide
+    const SLIDES = [
+        {
+            line1: { str: '* SUPER SELLER *', colors: [
+                '#ffffff','#ff3333','#ff9933','#ffee33','#33ff33','#3399ff','#cc33ff','#ff33cc',
+                '#ff3333','#ffee33','#33ff33','#3399ff','#ff9933','#cc33ff','#ff33cc','#ffffff',
+            ]},
+            line2: { str: '8086', colors: ['#ffee33','#ff9933','#ff3333','#ffee33'] },
+        },
+        {
+            line1: { str: '* TEXTJAM *', colors: [
+                '#ffffff','#3399ff','#3399ff','#88ccff','#3399ff','#3399ff','#88ccff','#3399ff',
+                '#3399ff','#88ccff','#ffffff',
+            ]},
+            line2: { str: '2026', colors: ['#3399ff','#88ccff','#3399ff','#88ccff'] },
+        },
+        {
+            line1: { str: '* BALLROLLER *', colors: [
+                '#ffffff','#33ff33','#ff3333','#3399ff','#ffee33','#33ff33','#ff3333','#3399ff',
+                '#ffee33','#33ff33','#ff3333','#3399ff','#ffee33','#ffffff',
+            ]},
+            line2: { str: 'GAMES', colors: ['#33ff33','#ff3333','#3399ff','#ffee33','#33ff33'] },
+        },
+    ];
+    const TICKS_PER_SLIDE = 74;
+    const SS_CYCLE = TICKS_PER_SLIDE * SLIDES.length;
+    const phase = ssTick % SS_CYCLE;
+    const slideIdx = Math.floor(phase / TICKS_PER_SLIDE);
+    const sp = phase % TICKS_PER_SLIDE; // local phase within this slide
+    const slide = SLIDES[slideIdx];
+
+    const whiteOn = false;
     lightPositions.forEach(([r, c], i) => {
         const on = whiteOn || ((i - tick + N_LIGHTS) % N_LIGHTS) % 3 === 0;
         g[r][c]   = on ? '█' : '░';
         col[r][c] = on ? '#ffffff' : '#555555';
     });
-    // ── ANIMATION SEQUENCE ──────────────────────────────────────────────────────
-    // Phase layout (ticks):
-    //   0–15:  both scroll in from left
-    //  16–21:  both flash 3 times
-    //  22–37:  SS letters illuminate L→R (16 ticks)
-    //  38–41:  8086 digits illuminate L→R (4 ticks)
-    //  42–47:  both flash 3 times
-    //  48–51:  both hold fully lit
-    //  52–67:  both scroll out to right
-    //  68–71:  blank pause, then loop
 
-    const CYCLE_LEN = 72;
-    const phase = tick % CYCLE_LEN;
-
-    const ssStr = '* SUPER SELLER *';
-    const ssLen = ssStr.length;
-    const ssFinalCol = Math.floor((COLS - ssLen) / 2);
-    const ssColors = [
-        '#ff3333','#ff9933','#ffee33','#33ff33',
-        '#3399ff','#cc33ff','#ff33cc','#ffffff',
-        '#ff3333','#ffee33','#33ff33','#3399ff',
-        '#ff9933','#cc33ff','#ff33cc','#ffffff',
-    ];
-
-    const d8Str = '8086';
-    const d8Len = d8Str.length;
-    const d8FinalCol = Math.floor((COLS - d8Len) / 2);
-    const d8Colors = ['#ffee33','#ff9933','#ff3333','#ffee33'];
-
-    // Innermost rectangle interior bounds (don't overwrite its border)
     const INNER = { r1: 11, r2: 17, c1: 11, c2: 28 };
-    const midR = Math.floor((INNER.r1 + INNER.r2) / 2); // row 14 — centre of inner box
+    const midR = Math.floor((INNER.r1 + INNER.r2) / 2);
     const clipC = (c) => c > INNER.c1 && c < INNER.c2;
 
-    // Shared scroll offset (both elements move together)
+    // Per-slide scroll/visibility using longest line for scroll width
+    const line1 = slide.line1;
+    const line2 = slide.line2;
+    const refLen = line1.str.length; // scroll reference width
+
+    // sp layout: 0-15 scroll-in, 16-21 flash, 22-37 reveal line1,
+    //            38-43 reveal line2 (or hold if no line2), 44-49 final flash,
+    //            50-53 hold, 54-69 scroll-out, 70-73 blank
     let scrollOffset = 0, visible = true;
-    if (phase < 16) {
-        scrollOffset = -(ssLen - 1 - phase);
-    } else if (phase < 52) {
+    if (sp < 16) {
+        scrollOffset = Math.round(sp * refLen / 16) - refLen;
+    } else if (sp < 54) {
         scrollOffset = 0;
-    } else if (phase < 68) {
-        scrollOffset = phase - 51;
+    } else if (sp < 70) {
+        scrollOffset = sp - 53;
     } else {
         visible = false;
     }
 
     if (visible) {
-        // ── Draw SUPER SELLER ──
-        ssStr.split('').forEach((ch, i) => {
-            const c = ssFinalCol + i + scrollOffset;
+        // ── Draw line 1 ──
+        line1.str.split('').forEach((ch, i) => {
+            const finalCol = Math.floor((COLS - line1.str.length) / 2);
+            const c = finalCol + i + scrollOffset;
             if (!clipC(c)) return;
             g[midR - 2][c] = ch;
-            let letterLit;
-            if (phase < 16) {
-                letterLit = true; // scrolling in, fully lit
-            } else if (phase < 22) {
-                letterLit = (phase % 2) === 0; // initial flash
-            } else if (phase < 38) {
-                letterLit = i <= (phase - 22); // reveal L→R
-            } else if (phase < 42) {
-                letterLit = true; // SS fully lit while 8086 reveals
-            } else if (phase < 48) {
-                letterLit = (phase % 2) === 0; // final flash
-            } else {
-                letterLit = true; // hold / exit
-            }
-            col[midR - 2][c] = letterLit ? ssColors[i % ssColors.length] : '#1a1f3a';
+            let lit;
+            if (sp < 16)       { lit = true; }
+            else if (sp < 22)  { lit = (sp % 2) === 0; }
+            else if (sp < 38)  { lit = i <= (sp - 22); }
+            else if (sp < 44)  { lit = true; }
+            else if (sp < 50)  { lit = (sp % 2) === 0; }
+            else               { lit = true; }
+            // asterisks (index 0 and last) always white
+            const isAsterisk = (i === 0 || i === line1.str.length - 1);
+            col[midR - 2][c] = lit ? (isAsterisk ? '#ffffff' : (line1.colors[i] ?? '#ffffff')) : '#1a1f3a';
         });
 
-        // ── Draw 8086 ──
-        d8Str.split('').forEach((ch, i) => {
-            const c = d8FinalCol + i + scrollOffset;
-            if (!clipC(c)) return;
-            g[midR][c] = ch;
-            let digitLit;
-            if (phase < 16) {
-                digitLit = true; // scrolling in, fully lit
-            } else if (phase < 22) {
-                digitLit = (phase % 2) === 0; // initial flash
-            } else if (phase < 38) {
-                digitLit = false; // dark while SS reveals
-            } else if (phase < 42) {
-                digitLit = i <= (phase - 38); // reveal L→R after SS done
-            } else if (phase < 48) {
-                digitLit = (phase % 2) === 0; // final flash
-            } else {
-                digitLit = true; // hold / exit
-            }
-            col[midR][c] = digitLit ? d8Colors[i] : '#1a1f3a';
-        });
+        // ── Draw line 2 (if present) ──
+        if (line2.str) {
+            line2.str.split('').forEach((ch, i) => {
+                const finalCol = Math.floor((COLS - line2.str.length) / 2);
+                const c = finalCol + i + scrollOffset;
+                if (!clipC(c)) return;
+                g[midR][c] = ch;
+                let lit;
+                if (sp < 16)       { lit = true; }
+                else if (sp < 22)  { lit = (sp % 2) === 0; }
+                else if (sp < 38)  { lit = false; }
+                else if (sp < 44)  { lit = i <= (sp - 38); }
+                else if (sp < 50)  { lit = (sp % 2) === 0; }
+                else               { lit = true; }
+                col[midR][c] = lit ? (line2.colors[i] ?? '#ffffff') : '#1a1f3a';
+            });
+        }
     }
     // Row 29 is outside the lights border — plain white, no color entry needed
     writeCenter(g, 27, 'PRESS ENTER TO CONTINUE');
@@ -574,7 +624,7 @@ function buildBroadwayGrid(tick) {
     // Static white trim — one frame inside the bulb ring (smaller), one outside (larger)
     {
         const trimFrames = [
-            { r1: 3, r2: 24, c1: 3, c2: 36 },  // smaller: inside the flashing lights
+            { r1: 3, r2: 24, c1: 2, c2: 37 },  // smaller: inside the flashing lights
             { r1: 1, r2: 26, c1: 0, c2: 39 },  // larger: outside the flashing lights
         ];
         trimFrames.forEach(({ r1, r2, c1, c2 }) => {
@@ -650,10 +700,20 @@ let gameActive      = false;
 let lastIntroGrid   = makeGrid();
 let broadwayInterval = null;
 let broadwayTick    = 0;
+let ssTick          = 0;   // drives SUPER SELLER 8086 animation independently
+let ringTick        = 0;   // drives RINGS animation independently
 
 const stock  = { price: 45, volatility: 0.15, history: [45] };
 const player = { cash: 1000, shares: 0, startingCash: 1000, green: 0, red: 0, blue: 0, yellow: 0 };
 let roundTime = 30, roundInterval = null, currentMode = null;
+
+// ─── COUNTER BORDER ANIMATION ─────────────────────────────────────────────────
+// Arc: quarter of the perimeter lit, rotating continuously.
+const counterBorderAnim = { tick: 0 };
+setInterval(() => {
+    counterBorderAnim.tick++;
+    if (typeof gameActive !== 'undefined' && gameActive) updateGameDisplay();
+}, 80);
 
 // ─── INTRO FLOW ───────────────────────────────────────────────────────────────
 async function showIntroScreen() {
@@ -662,8 +722,10 @@ async function showIntroScreen() {
         await animateScrollDown(lastIntroGrid, firstG, introRenderer);
         lastIntroGrid = firstG;
         broadwayTick  = 0;
+        ssTick        = 0;
+        ringTick      = 0;
         broadwayInterval = setInterval(() => {
-            broadwayTick++;
+            broadwayTick++; ssTick++; ringTick++;
             const { g, col } = buildBroadwayGrid(broadwayTick);
             introRenderer.render(g, col);
         }, 120);
@@ -800,9 +862,24 @@ function sellStock(qty) {
 function submitCommand() {
     if (waitingForEnter) { waitingForEnter = false; showIntroScreen(); return; }
     if (!gameActive || !currentMode) return;
-    const qty = parseInt(prompt(`Enter quantity to ${currentMode}:`));
-    if ((currentMode === 'buy' ? buyStock : sellStock)(qty)) { currentMode = null; activeKey = null; updateGameDisplay(); }
+    openQtyModal(currentMode);
 }
+function openQtyModal(mode) {
+    document.getElementById('qtyLabel').textContent = `QUANTITY TO ${mode.toUpperCase()}:`;
+    const m = document.getElementById('qtyModal'); m.style.display = 'flex';
+    setTimeout(() => document.getElementById('qtyInput').focus(), 50);
+}
+function closeQtyModal() { document.getElementById('qtyModal').style.display = 'none'; }
+function confirmQty() {
+    const qty = parseInt(document.getElementById('qtyInput').value, 10);
+    closeQtyModal();
+    if (!isNaN(qty) && qty > 0 && (currentMode === 'buy' ? buyStock : sellStock)(qty))
+        { currentMode = null; activeKey = null; updateGameDisplay(); }
+}
+document.getElementById('qtyInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); confirmQty(); }
+    if (e.key === 'Escape') { closeQtyModal(); }
+});
 
 // ─── INPUT ────────────────────────────────────────────────────────────────────
 let activeKey = null;
@@ -848,8 +925,36 @@ document.addEventListener('keydown', e => {
 wireCanvasKeyboard(document.getElementById('introCanvas'));
 wireCanvasKeyboard(document.getElementById('resultsCanvas'));
 wireCanvasKeyboard(document.getElementById('gameCanvas'));
-// Defer until after the browser has painted so the canvas has real CSS dimensions.
-// A double-rAF ensures layout + paint have both completed before we read sizes.
+
+// ─── CUSTOM CURSOR ────────────────────────────────────────────────────────────
+const cursorEl = document.getElementById('cursor');
+const cursorSvg = document.getElementById('cursorSvg');
+function setCursorVariant(onButton) {
+    cursorEl.style.width = '24px'; cursorEl.style.height = '24px';
+    cursorEl.style.transform = 'translate(-12px,-12px)';
+    cursorSvg.setAttribute('width','24'); cursorSvg.setAttribute('height','24');
+    cursorSvg.setAttribute('viewBox','0 0 24 24');
+    const glow = id => `<defs><filter id='${id}' x='-50%' y='-50%' width='200%' height='200%'><feGaussianBlur stdDeviation='1.2' result='b'/><feMerge><feMergeNode in='b'/><feMergeNode in='SourceGraphic'/></feMerge></filter></defs>`;
+    if (onButton) {
+        cursorSvg.innerHTML = glow('gc') + `<g filter='url(#gc)'><line x1='12' y1='0' x2='12' y2='8' stroke='#00ff88' stroke-width='1.5' stroke-linecap='round'/><line x1='12' y1='16' x2='12' y2='24' stroke='#00ff88' stroke-width='1.5' stroke-linecap='round'/><line x1='0' y1='12' x2='8' y2='12' stroke='#00ff88' stroke-width='1.5' stroke-linecap='round'/><line x1='16' y1='12' x2='24' y2='12' stroke='#00ff88' stroke-width='1.5' stroke-linecap='round'/><rect x='10' y='10' width='4' height='4' fill='#00ff88'/><polyline points='9,4 9,9 4,9' fill='none' stroke='#00ff88' stroke-width='1' opacity='0.6'/><polyline points='15,4 15,9 20,9' fill='none' stroke='#00ff88' stroke-width='1' opacity='0.6'/><polyline points='9,20 9,15 4,15' fill='none' stroke='#00ff88' stroke-width='1' opacity='0.6'/><polyline points='15,20 15,15 20,15' fill='none' stroke='#00ff88' stroke-width='1' opacity='0.6'/></g>`;
+    } else {
+        cursorSvg.innerHTML = glow('gn') + `<g filter='url(#gn)'><polyline points='9,4 9,9 4,9' fill='none' stroke='#00ff88' stroke-width='1' opacity='0.6'/><polyline points='15,4 15,9 20,9' fill='none' stroke='#00ff88' stroke-width='1' opacity='0.6'/><polyline points='9,20 9,15 4,15' fill='none' stroke='#00ff88' stroke-width='1' opacity='0.6'/><polyline points='15,20 15,15 20,15' fill='none' stroke='#00ff88' stroke-width='1' opacity='0.6'/></g>`;
+    }
+}
+setCursorVariant(false);
+function isOverButton(e) {
+    const t = e.target;
+    if (t.tagName === 'BUTTON') return true;
+    if (t.tagName === 'CANVAS') { const r = t.getBoundingClientRect(); return !!hitTestKeyboard(t, (e.clientX-r.left)*t.width/r.width, (e.clientY-r.top)*t.height/r.height); }
+    return false;
+}
+document.addEventListener('mousemove', e => {
+    cursorEl.style.left = e.clientX + 'px'; cursorEl.style.top = e.clientY + 'px';
+    setCursorVariant(isOverButton(e));
+});
+document.addEventListener('mouseleave', () => { cursorEl.style.opacity = '0'; });
+document.addEventListener('mouseenter', () => { cursorEl.style.opacity = '1'; });
+
 requestAnimationFrame(() => requestAnimationFrame(() => showIntroScreen()));
 </script>
 </body>
