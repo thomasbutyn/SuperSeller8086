@@ -5,600 +5,562 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SuperSeller8086 - Stock Trading Game</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
-
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        html, body {
-            width: 100%;
-            height: 100%;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { width: 100%; height: 100%; background: #0a0e27; }
 
         body {
-            background-color: #0a0e27;
-            color: #ffffff;
-            font-family: 'Press Start 2P', cursive;
             display: flex;
             justify-content: center;
             align-items: center;
             overflow: hidden;
         }
 
-        .fullscreen-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
+        /*
+         * The console is a <canvas> element.
+         * Canvas drawText positions each character at an exact pixel coordinate —
+         * no font metric, kerning, or glyph-width variance can shift columns.
+         * charW = consoleWidth / 40, charH = consoleHeight / 30.
+         * Every character is drawn at x = col * charW, y = row * charH.
+         * Perfect grid alignment is guaranteed by arithmetic, not typography.
+         *
+         * Text selection: an invisible overlay of 30 <div class="row"> elements
+         * sits on top of the canvas, each absolutely positioned to match a canvas
+         * row. They hold the plain text so the browser can select/copy it, while
+         * the canvas handles all visual rendering.
+         */
+        .console-wrap {
+            position: relative;
+            width: min(100vw, calc(100dvh * 4 / 3));
+            max-width: 600px;
+            aspect-ratio: 4 / 3;
+            border: 3px solid #ffffff;
+            border-radius: 5px;
+            box-shadow: 0 0 20px rgba(255,255,255,0.3);
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
             width: 100%;
             height: 100%;
-            background-color: #0a0e27;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            background: #1a1f3a;
+        }
+
+        /* Invisible text overlay — same grid as canvas, for selection only */
+        .text-overlay {
+            position: absolute;
+            inset: 0;
+            pointer-events: none; /* let clicks pass through to canvas */
+        }
+
+        .overlay-row {
+            position: absolute;
+            left: 0; right: 0;
+            white-space: pre;
+            overflow: hidden;
+            color: transparent;          /* invisible — canvas does the drawing */
+            background: transparent;
+            font-family: monospace;
+            user-select: text;
+            pointer-events: auto;        /* but allow text selection */
+            cursor: text;
+            /* font-size / line-height set dynamically in JS to match canvas rows */
+        }
+
+        /* Screens */
+        .screen {
+            position: fixed; inset: 0;
+            background: #0a0e27;
+            display: flex; justify-content: center; align-items: center;
             z-index: 1000;
-            overflow: hidden;
             padding: 20px;
         }
+        .screen.hidden { display: none; }
 
-        .fullscreen-overlay.hidden {
-            display: none;
-        }
-
-        .intro-console {
-            width: 100%;
-            aspect-ratio: 1;
-            max-width: 600px;
-            background-color: #1a1f3a;
-            border: 3px solid #ffffff;
-            border-radius: 5px;
-            box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
-            display: grid;
-            grid-template-columns: repeat(40, 1fr);
-            grid-template-rows: repeat(30, 1fr);
-            padding: 0;
-            gap: 0;
-            overflow: hidden;
-            position: relative;
-        }
-
-        .console-cell {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-size: clamp(8px, 1.2vw, 20px);
-            line-height: 1;
-            text-shadow: 0 0 5px #ffffff;
-            white-space: pre;
-            aspect-ratio: 1;
-            position: relative;
-        }
-
-        .game-wrapper {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-        }
-
-        .game-container {
-            width: 100%;
-            aspect-ratio: 1;
-            max-width: 600px;
-            background-color: #1a1f3a;
-            border: 3px solid #ffffff;
-            border-radius: 5px;
-            box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
-            display: grid;
-            grid-template-columns: repeat(40, 1fr);
-            grid-template-rows: repeat(30, 1fr);
-            padding: 0;
-            gap: 0;
-            overflow: hidden;
-            position: relative;
-        }
-
-        .game-cell {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-size: clamp(8px, 1.2vw, 20px);
-            line-height: 1;
-            text-shadow: 0 0 5px #ffffff;
-            white-space: pre;
-            aspect-ratio: 1;
-            border-bottom: 1px solid #0a0e27;
-            border-right: 1px solid #0a0e27;
-        }
-
-        .results-screen {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: #0a0e27;
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 999;
-            flex-direction: column;
-            gap: 30px;
-            padding: 20px;
-        }
-
-        .results-screen.show {
-            display: flex;
-        }
-
-        .results-console {
-            width: 100%;
-            aspect-ratio: 1;
-            max-width: 600px;
-            background-color: #1a1f3a;
-            border: 3px solid #ffffff;
-            border-radius: 5px;
-            box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
-            display: grid;
-            grid-template-columns: repeat(40, 1fr);
-            grid-template-rows: repeat(30, 1fr);
-            padding: 0;
-            gap: 0;
-            overflow: hidden;
-            position: relative;
-        }
-
-        .results-cell {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-size: clamp(8px, 1.2vw, 20px);
-            line-height: 1;
-            text-shadow: 0 0 5px #ffffff;
-            white-space: pre;
-            aspect-ratio: 1;
-        }
+        #resultsScreen { flex-direction: column; gap: 30px; z-index: 999; }
 
         .results-button {
-            background-color: #ffffff;
-            color: #0a0e27;
-            border: none;
-            padding: 15px 30px;
-            font-weight: bold;
-            cursor: pointer;
-            font-family: 'Press Start 2P', cursive;
-            font-size: 12px;
-            border-radius: 3px;
-            transition: all 0.3s;
+            background: #ffffff; color: #0a0e27;
+            border: none; padding: 15px 30px;
+            font-family: monospace; font-size: 12px;
+            border-radius: 3px; cursor: pointer; transition: all 0.3s;
         }
-
-        .results-button:hover {
-            background-color: #cccccc;
-            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
-        }
-
-        @keyframes slideDown {
-            from {
-                transform: translateY(-100%);
-                opacity: 0;
-            }
-            to {
-                transform: translateY(0);
-                opacity: 1;
-            }
-        }
-
-        @keyframes slideOut {
-            from {
-                transform: translateY(0);
-                opacity: 1;
-            }
-            to {
-                transform: translateY(100%);
-                opacity: 0;
-            }
-        }
+        .results-button:hover { background: #cccccc; box-shadow: 0 0 10px rgba(255,255,255,0.5); }
     </style>
 </head>
 <body>
-    <div class="fullscreen-overlay" id="overlay">
-        <div class="intro-console" id="introConsole"></div>
+
+<div class="screen" id="introScreen">
+    <div class="console-wrap" id="introWrap">
+        <canvas id="introCanvas"></canvas>
+        <div class="text-overlay" id="introOverlay"></div>
     </div>
+</div>
 
-    <div class="results-screen" id="resultsScreen">
-        <div class="results-console" id="resultsConsole"></div>
-        <button class="results-button" onclick="handleResultsEnter()">NEXT</button>
+<div class="screen hidden" id="resultsScreen">
+    <div class="console-wrap" id="resultsWrap">
+        <canvas id="resultsCanvas"></canvas>
+        <div class="text-overlay" id="resultsOverlay"></div>
     </div>
+    <button class="results-button" onclick="handleResultsEnter()">NEXT</button>
+</div>
 
-    <div class="game-wrapper">
-        <div class="game-container" id="gameConsole"></div>
+<div class="screen hidden" id="gameScreen">
+    <div class="console-wrap" id="gameWrap">
+        <canvas id="gameCanvas"></canvas>
+        <div class="text-overlay" id="gameOverlay"></div>
     </div>
+</div>
 
-    <script>
-        // 40x30 grid intro screens
-        const introScreens = [
-            // Screen 1: Title
-            [
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "    > SUPERSELLER8086 <                 ",
-                "                                        ",
-                "    █████████████████                   ",
-                "    █████████████████                   ",
-                "    █████████████████                   ",
-                "    █████████████████                   ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "    Press ENTER to continue             "
-            ],
-            // Screen 2: Warning
-            [
-                "                                        ",
-                "    WELCOME TO STOCK TRADING             ",
-                "                                        ",
-                "    WARNING: 30 seconds per round        ",
-                "                                        ",
-                "    Unsold stocks EXPIRE and become      ",
-                "    WORTHLESS ($0 value)                ",
-                "                                        ",
-                "    Buy & sell quickly to maximize       ",
-                "    profits before expiration!          ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "    Press ENTER to continue             "
-            ],
-            // Screen 3: Instructions
-            [
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "         BUY (Q) / SELL (A)              ",
-                "                                        ",
-                "     Watch the price and trade          ",
-                "                                        ",
-                "     Q = Buy  |  A = Sell                ",
-                "                                        ",
-                "     Type quantity then ENTER            ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "                                        ",
-                "    Press ENTER to continue             "
-            ]
-        ];
+<script>
+// ─── GRID CONSTANTS ───────────────────────────────────────────────────────────
+const COLS = 40, ROWS = 30;
 
-        let currentScreen = 0;
-        let waitingForEnter = false;
-        let gameActive = false;
+// ─── 2D GRID HELPERS ──────────────────────────────────────────────────────────
+const makeGrid   = () => Array.from({ length: ROWS }, () => Array(COLS).fill(' '));
+const parseGrid  = lines => Array.from({ length: ROWS }, (_, r) => {
+    const line = (lines[r] ?? '').trimStart();
+    return Array.from({ length: COLS }, (_, c) => line[c] ?? ' ');
+});
+const writeStr   = (g, row, col, str) =>
+    str.split('').forEach((ch, i) => { if (col + i < COLS) g[row][col + i] = ch; });
+const fillRow    = (g, row, ch) => { for (let c = 0; c < COLS; c++) g[row][c] = ch; };
+const writeCenter = (g, row, str) =>
+    writeStr(g, row, Math.floor((COLS - str.length) / 2), str);
 
-        function renderStaticGrid(lines, container) {
-            container.innerHTML = '';
-            for (let row = 0; row < 30; row++) {
-                const line = lines[row] || '';
-                for (let col = 0; col < 40; col++) {
-                    const cell = document.createElement('div');
-                    cell.className = container.id === 'introConsole' ? 'console-cell' : 'game-cell';
-                    cell.textContent = line[col] || ' ';
-                    cell.style.gridColumn = col + 1;
-                    cell.style.gridRow = row + 1;
-                    
-                    // Calculate animation for intro screens
-                    if (container.id === 'introConsole') {
-                        const char = line[col];
-                        if (char && char !== ' ') {
-                            const delay = col * 0.02 + (row * 0.01);
-                            cell.style.animation = `slideDown 0.8s ease-out ${delay}s both`;
-                        }
-                    }
-                    
-                    container.appendChild(cell);
-                }
-            }
+// ─── CANVAS RENDERER ──────────────────────────────────────────────────────────
+/**
+ * Each console is backed by a <canvas> + an invisible text overlay.
+ * We store a Console object per screen to keep state together.
+ *
+ * Drawing:
+ *   charW = canvas.width  / COLS   (exact pixel width per column)
+ *   charH = canvas.height / ROWS   (exact pixel height per row)
+ *   Each character is drawn at:
+ *     x = col * charW + charW/2   (center of cell, textAlign='center')
+ *     y = row * charH + charH/2   (center of cell, textBaseline='middle')
+ *
+ * This means column positions are pure arithmetic — the font cannot shift them.
+ *
+ * The canvas is sized to its CSS pixel size via a ResizeObserver, keeping the
+ * backing buffer matching the display size exactly (no blur, no scaling artifact).
+ */
+class ConsoleRenderer {
+    constructor(canvasEl, overlayEl) {
+        this.canvas      = canvasEl;
+        this.overlay     = overlayEl;
+        this.ctx         = canvasEl.getContext('2d');
+        this._grid       = makeGrid();
+        this._colors     = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+        this._lastGrid   = null;   // cached for re-render on resize
+        this._lastColors = null;
+        this._lastIsGame = false;
+
+        // Match canvas buffer to CSS size
+        this._ro = new ResizeObserver(() => this._resize());
+        this._ro.observe(canvasEl);
+        this._resize();
+
+        // Build overlay rows
+        for (let r = 0; r < ROWS; r++) {
+            const div = document.createElement('div');
+            div.className = 'overlay-row';
+            div.id = `${canvasEl.id}-row-${r}`;
+            this.overlay.appendChild(div);
         }
+        this._positionOverlay();
+    }
 
-        function showIntroScreen() {
-            if (currentScreen < introScreens.length) {
-                renderStaticGrid(introScreens[currentScreen], document.getElementById('introConsole'));
-                waitingForEnter = true;
-                currentScreen++;
-            } else {
-                startGameplay();
-            }
-        }
+    _resize() {
+        const rect = this.canvas.getBoundingClientRect();
+        const w = Math.round(rect.width);
+        const h = Math.round(rect.height);
+        if (!w || !h) return; // not yet laid out — ResizeObserver will fire again
+        this.canvas.width  = w;
+        this.canvas.height = h;
+        this._positionOverlay();
+        if (this._lastGrid) this.render(this._lastGrid, this._lastColors, this._lastIsGame);
+    }
 
-        function startGameplay() {
-            document.getElementById('overlay').classList.add('hidden');
-            gameActive = true;
-            startRound();
-        }
+    _positionOverlay() {
+        const cw = this.canvas.width  || this.canvas.offsetWidth;
+        const ch = this.canvas.height || this.canvas.offsetHeight;
+        const charH = ch / ROWS;
+        const fontSize = charH * 0.72; // approximate match to canvas font size
 
-        // Stock data
-        const stock = {
-            price: 45,
-            volatility: 0.15,
-            history: [45]
-        };
-
-        let player = {
-            cash: 1000,
-            shares: 0,
-            startingCash: 1000
-        };
-
-        let roundTime = 30;
-        let roundInterval = null;
-        let currentMode = null; // 'buy' or 'sell'
-
-        function buildGameGrid() {
-            const lines = Array(30).fill('').map(() => Array(40).fill(' ').join(''));
-            
-            // Convert to array for manipulation
-            const grid = lines.split('\n').map(line => line.split(''));
-
-            // Header: price and timer
-            const header = `RED $${stock.price.toFixed(2)}`;
-            const timerStr = `${roundTime}s`;
-            
-            header.split('').forEach((char, i) => {
-                if (i < 20) grid[0][i] = char;
-            });
-            timerStr.split('').forEach((char, i) => {
-                if (i + 30 < 40) grid[0][30 + i] = char;
-            });
-
-            // Separator
-            for (let i = 0; i < 40; i++) grid[1][i] = '─';
-
-            // Chart (rows 3-15)
-            const chartStart = 3;
-            const chartHeight = 10;
-            const history = stock.history.slice(-38);
-            const maxPrice = Math.max(...history);
-            const minPrice = Math.min(...history);
-            const range = maxPrice - minPrice || 1;
-
-            for (let i = 0; i < chartHeight; i++) {
-                for (let j = 0; j < Math.min(history.length, 38); j++) {
-                    const normalized = (history[j] - minPrice) / range;
-                    const barHeight = Math.round(normalized * (chartHeight - 1));
-                    grid[chartStart + chartHeight - 1 - i][j + 1] = barHeight >= (chartHeight - 1 - i) ? '·' : ' ';
-                }
-            }
-
-            // Separator
-            for (let i = 0; i < 40; i++) grid[16][i] = '─';
-
-            // Mode display
-            if (currentMode) {
-                const modeText = currentMode === 'buy' ? 'BUY MODE' : 'SELL MODE';
-                modeText.split('').forEach((char, i) => {
-                    if (i < 40) grid[18][i] = char;
-                });
-            }
-
-            // Stats
-            const cash = `Cash: $${player.cash.toFixed(2)}`;
-            const shares = `Shares: ${player.shares}`;
-            const value = `Value: $${(player.shares * stock.price).toFixed(2)}`;
-            
-            cash.split('').forEach((char, i) => { if (i < 40) grid[20][i] = char; });
-            shares.split('').forEach((char, i) => { if (i < 40) grid[21][i] = char; });
-            value.split('').forEach((char, i) => { if (i < 40) grid[22][i] = char; });
-
-            // Separator
-            for (let i = 0; i < 40; i++) grid[27][i] = '─';
-
-            // Instructions
-            const instruct1 = 'Q: Buy | A: Sell';
-            instruct1.split('').forEach((char, i) => { if (i < 40) grid[28][i] = char; });
-
-            const instruct2 = currentMode ? 'Enter qty and press ENTER' : 'Press Q or A to trade';
-            instruct2.split('').forEach((char, i) => { if (i < 40) grid[29][i] = char; });
-
-            return grid.map(row => row.join(''));
-        }
-
-        function updateGameDisplay() {
-            renderStaticGrid(buildGameGrid(), document.getElementById('gameConsole'));
-        }
-
-        function updateStockPrice() {
-            const changePercent = (Math.random() - 0.5) * stock.volatility;
-            const newPrice = Math.max(1, stock.price * (1 + changePercent));
-            stock.price = parseFloat(newPrice.toFixed(2));
-            stock.history.push(stock.price);
-            updateGameDisplay();
-        }
-
-        function startRound() {
-            roundTime = 30;
-            stock.history = [stock.price];
-            currentMode = null;
-            updateGameDisplay();
-
-            if (roundInterval) clearInterval(roundInterval);
-
-            roundInterval = setInterval(() => {
-                roundTime--;
-                updateGameDisplay();
-
-                if (roundTime <= 0) {
-                    endRound();
-                }
-            }, 1000);
-        }
-
-        function endRound() {
-            clearInterval(roundInterval);
-            gameActive = false;
-            
-            const portfolioValue = player.shares * stock.price;
-            const totalValue = player.cash + portfolioValue;
-            const profit = totalValue - player.startingCash;
-            const profitPercent = ((profit / player.startingCash) * 100).toFixed(1);
-
-            const results = [
-                "ROUND OVER",
-                "",
-                `Final: $${stock.price.toFixed(2)}`,
-                `Unsold: ${player.shares}`,
-                "",
-                `Cash: $${player.cash.toFixed(2)}`,
-                `Portfolio: $${portfolioValue.toFixed(2)}`,
-                `Total: $${totalValue.toFixed(2)}`,
-                "",
-                `Profit: $${profit.toFixed(2)}`,
-                `(${profitPercent}%)`
-            ];
-
-            // Pad to 30 lines
-            while (results.length < 30) {
-                results.push('');
-            }
-
-            renderStaticGrid(results, document.getElementById('resultsConsole'));
-            document.getElementById('resultsScreen').classList.add('show');
-        }
-
-        function handleResultsEnter() {
-            document.getElementById('resultsScreen').classList.remove('show');
-            
-            player.cash = 1000;
-            player.shares = 0;
-            player.startingCash = 1000;
-            stock.price = 45;
-            stock.history = [45];
-            stock.volatility = 0.15;
-            gameActive = true;
-            
-            startRound();
-        }
-
-        function buyStock(quantity) {
-            if (!quantity || quantity <= 0) return false;
-
-            const cost = stock.price * quantity;
-            if (cost > player.cash) return false;
-
-            player.cash -= cost;
-            player.shares += quantity;
-            return true;
-        }
-
-        function sellStock(quantity) {
-            if (!quantity || quantity <= 0) return false;
-            if (player.shares < quantity) return false;
-
-            const proceeds = stock.price * quantity;
-            player.cash += proceeds;
-            player.shares -= quantity;
-            return true;
-        }
-
-        function submitCommand() {
-            if (waitingForEnter) {
-                waitingForEnter = false;
-                showIntroScreen();
-                return;
-            }
-
-            if (!gameActive || !currentMode) return;
-
-            const quantity = parseInt(prompt(`Enter quantity to ${currentMode}:`));
-            
-            let success = false;
-            
-            if (currentMode === 'buy') {
-                success = buyStock(quantity);
-            } else if (currentMode === 'sell') {
-                success = sellStock(quantity);
-            }
-
-            if (success) {
-                currentMode = null;
-                updateGameDisplay();
-            }
-        }
-
-        // Handle key presses
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                submitCommand();
-                return;
-            }
-
-            if (waitingForEnter) return;
-            if (!gameActive) return;
-            
-            if (e.key === 'q' || e.key === 'Q') {
-                e.preventDefault();
-                currentMode = currentMode === 'buy' ? null : 'buy';
-                updateGameDisplay();
-            } else if (e.key === 'a' || e.key === 'A') {
-                e.preventDefault();
-                currentMode = currentMode === 'sell' ? null : 'sell';
-                updateGameDisplay();
-            }
+        Array.from(this.overlay.children).forEach((div, r) => {
+            div.style.top        = `${(r / ROWS * 100)}%`;
+            div.style.height     = `${(1 / ROWS * 100)}%`;
+            div.style.fontSize   = `${fontSize}px`;
+            div.style.lineHeight = `${charH}px`;
         });
+    }
 
-        // Start intro sequence
-        showIntroScreen();
-    </script>
+    /** Render a grid+colorGrid, diffing against last frame for the overlay */
+    render(grid, colorGrid = null, isGame = false) {
+        this._lastGrid   = grid;
+        this._lastColors = colorGrid;
+        this._lastIsGame = isGame;
+
+        const cw = this.canvas.width;
+        const ch = this.canvas.height;
+        const charW = cw / COLS;
+        const charH = ch / ROWS;
+
+        const ctx = this.ctx;
+        ctx.clearRect(0, 0, cw, ch);
+
+        // Background
+        ctx.fillStyle = '#1a1f3a';
+        ctx.fillRect(0, 0, cw, ch);
+
+        // Game grid lines
+        if (isGame) {
+            ctx.strokeStyle = '#0a0e27';
+            ctx.lineWidth = 1;
+            for (let r = 1; r < ROWS; r++) {
+                ctx.beginPath();
+                ctx.moveTo(0, r * charH);
+                ctx.lineTo(cw, r * charH);
+                ctx.stroke();
+            }
+        }
+
+        /*
+         * Font sizing: charH * 0.72 keeps the glyph within the cell vertically.
+         * We use a system monospace stack so the font is always available and
+         * renders quickly, but the key point is that we don't use font metrics
+         * for positioning — x/y come from col*charW and row*charH.
+         */
+        const fontSize = Math.floor(charH * 0.72);
+        ctx.font = `${fontSize}px "Courier New", Courier, monospace`;
+        ctx.textAlign    = 'left';
+        ctx.textBaseline = 'middle';
+
+        const overlayRows = this.overlay.children;
+
+        for (let r = 0; r < ROWS; r++) {
+            let rowText = '';
+
+            for (let c = 0; c < COLS; c++) {
+                const ch_  = grid[r][c];
+                const color = colorGrid?.[r]?.[c] ?? null;
+
+                // Glow / shadow
+                const glowColor = color ?? '#ffffff';
+                ctx.shadowColor = glowColor;
+                ctx.shadowBlur  = color ? 6 : 3;
+
+                ctx.fillStyle = color ?? '#ffffff';
+
+                /*
+                 * KEY: x position is col * charW. This is arithmetic, not font-metric.
+                 * Every character in every row lands at the same x for a given column,
+                 * regardless of what glyph it is or how wide the font thinks it is.
+                 * We draw with textAlign='left' from the left edge of the cell.
+                 */
+                ctx.fillText(ch_, c * charW, r * charH + charH / 2);
+
+                rowText += ch_;
+            }
+
+            // Update overlay row text for selection (only if changed)
+            if (overlayRows[r] && overlayRows[r].textContent !== rowText) {
+                overlayRows[r].textContent = rowText;
+            }
+        }
+
+        ctx.shadowBlur = 0;
+    }
+}
+
+// ─── CONSOLE INSTANCES ────────────────────────────────────────────────────────
+const introRenderer   = new ConsoleRenderer(
+    document.getElementById('introCanvas'),
+    document.getElementById('introOverlay')
+);
+const resultsRenderer = new ConsoleRenderer(
+    document.getElementById('resultsCanvas'),
+    document.getElementById('resultsOverlay')
+);
+const gameRenderer    = new ConsoleRenderer(
+    document.getElementById('gameCanvas'),
+    document.getElementById('gameOverlay')
+);
+
+// ─── BROADWAY LIGHTS ──────────────────────────────────────────────────────────
+const LIGHTS = { r1: 0, r2: 29, c1: 0, c2: 39 };
+const RINGS  = [
+    { rect: { r1: 10, r2: 18, c1: 11, c2: 28 }, on: '#33ff33', off: '#002a00' },
+    { rect: { r1:  8, r2: 20, c1:  9, c2: 30 }, on: '#ff3333', off: '#2a0000' },
+    { rect: { r1:  4, r2: 24, c1:  5, c2: 34 }, on: '#3399ff', off: '#00102a' },
+    { rect: { r1:  2, r2: 26, c1:  3, c2: 36 }, on: '#ffee33', off: '#2a2500' },
+];
+
+function perimeterPositions({ r1, r2, c1, c2 }) {
+    const pts = [];
+    for (let c = c1; c <= c2; c++) pts.push([r1, c]);
+    for (let r = r1 + 1; r <= r2; r++) pts.push([r, c2]);
+    for (let c = c2 - 1; c >= c1; c--) pts.push([r2, c]);
+    for (let r = r2 - 1; r > r1; r--) pts.push([r, c1]);
+    return pts;
+}
+
+function paintRing(col, { r1, r2, c1, c2 }, color) {
+    const set = (r, c) => { if (r >= 0 && r < ROWS && c >= 0 && c < COLS) col[r][c] = color; };
+    for (let c = c1; c <= c2; c++) { set(r1, c); set(r2, c); }
+    for (let r = r1 + 1; r < r2; r++) { set(r, c1); set(r, c2); }
+}
+
+const lightsPerim    = perimeterPositions(LIGHTS);
+const lightPositions = lightsPerim.filter((_, i) => i % 3 === 0);
+const N_LIGHTS       = lightPositions.length;
+
+function drawRect(g, { r1, r2, c1, c2 }, ch) {
+    g[r1][c1] = ch.tl; g[r1][c2] = ch.tr;
+    g[r2][c1] = ch.bl; g[r2][c2] = ch.br;
+    for (let c = c1 + 1; c < c2; c++) { g[r1][c] = ch.h; g[r2][c] = ch.h; }
+    for (let r = r1 + 1; r < r2; r++) { g[r][c1] = ch.v; g[r][c2] = ch.v; }
+}
+
+function buildBroadwayGrid(tick) {
+    const g   = makeGrid();
+    const col = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+    const SEQ = [0, 1, -1, 2, 3];
+    const activeSteps = new Set([tick % 5, (tick + 1) % 5]);
+    const whiteOn = activeSteps.has(2);
+
+    RINGS.forEach(({ rect, on, off }, i) =>
+        paintRing(col, rect, activeSteps.has(SEQ.indexOf(i)) ? on : off)
+    );
+    lightPositions.forEach(([r, c], i) => {
+        const on = whiteOn || ((i - tick + N_LIGHTS) % N_LIGHTS) % 3 === 0;
+        g[r][c]   = on ? '█' : '░';
+        col[r][c] = on ? '#ffffff' : '#555555';
+    });
+    RINGS.forEach(({ rect }) =>
+        drawRect(g, rect, { h: '─', v: '│', tl: '┌', tr: '┐', bl: '└', br: '┘' })
+    );
+    drawRect(g, LIGHTS, { h: '═', v: '║', tl: '╔', tr: '╗', bl: '╚', br: '╝' });
+
+    const midR = Math.floor(ROWS / 2);
+    writeCenter(g, midR - 1, '* SUPER SELLER *');
+    writeCenter(g, midR + 1, '    8  0  8  6   ');
+    writeCenter(g, 29, 'PRESS ENTER TO CONTINUE');
+    return { g, col };
+}
+
+// ─── STATIC INTRO SCREENS ─────────────────────────────────────────────────────
+function buildScreen2() {
+    const g = makeGrid();
+    writeCenter(g, 2,  'WELCOME TO');
+    writeCenter(g, 4,  'STOCK TRADING');
+    writeCenter(g, 7,  '! WARNING !');
+    writeCenter(g, 9,  '30 SECONDS PER ROUND');
+    writeCenter(g, 11, 'Unsold stocks EXPIRE');
+    writeCenter(g, 12, 'and become WORTHLESS');
+    writeCenter(g, 14, 'Buy & sell quickly to');
+    writeCenter(g, 15, 'maximize your profits!');
+    writeCenter(g, 29, 'PRESS ENTER TO CONTINUE');
+    return g;
+}
+
+function buildScreen3() {
+    const g = makeGrid();
+    writeCenter(g, 3,  'HOW TO PLAY');
+    writeCenter(g, 6,  'Q  =  BUY');
+    writeCenter(g, 8,  'A  =  SELL');
+    writeCenter(g, 11, 'Watch the price chart');
+    writeCenter(g, 12, 'and trade wisely.');
+    writeCenter(g, 15, 'Type a quantity then');
+    writeCenter(g, 16, 'press ENTER to confirm.');
+    writeCenter(g, 29, 'PRESS ENTER TO CONTINUE');
+    return g;
+}
+
+// ─── SCROLL ANIMATION ─────────────────────────────────────────────────────────
+function animateScrollDown(fromGrid, toGrid, renderer, tickMs = 40) {
+    const current = fromGrid.map(r => [...r]);
+    return new Promise(resolve => {
+        let tick = 0;
+        const interval = setInterval(() => {
+            for (let c = 0; c < COLS; c++) {
+                for (let r = ROWS - 1; r > 0; r--) current[r][c] = current[r - 1][c];
+                current[0][c] = toGrid[ROWS - 1 - tick][c];
+            }
+            renderer.render(current);
+            tick++;
+            if (tick >= ROWS) { clearInterval(interval); resolve(); }
+        }, tickMs);
+    });
+}
+
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let currentScreen   = 0;
+let waitingForEnter = false;
+let gameActive      = false;
+let lastIntroGrid   = makeGrid();
+let broadwayInterval = null;
+let broadwayTick    = 0;
+
+const stock  = { price: 45, volatility: 0.15, history: [45] };
+const player = { cash: 1000, shares: 0, startingCash: 1000 };
+let roundTime = 30, roundInterval = null, currentMode = null;
+
+// ─── INTRO FLOW ───────────────────────────────────────────────────────────────
+async function showIntroScreen() {
+    if (currentScreen === 0) {
+        const { g: firstG } = buildBroadwayGrid(0);
+        await animateScrollDown(lastIntroGrid, firstG, introRenderer);
+        lastIntroGrid = firstG;
+        broadwayTick  = 0;
+        broadwayInterval = setInterval(() => {
+            broadwayTick = (broadwayTick + 1) % N_LIGHTS;
+            const { g, col } = buildBroadwayGrid(broadwayTick);
+            introRenderer.render(g, col);
+        }, 120);
+        waitingForEnter = true;
+        currentScreen++;
+
+    } else if (currentScreen === 1) {
+        clearInterval(broadwayInterval);
+        const { g: fromG } = buildBroadwayGrid(broadwayTick);
+        const nextGrid = buildScreen2();
+        await animateScrollDown(fromG, nextGrid, introRenderer);
+        lastIntroGrid = nextGrid;
+        waitingForEnter = true;
+        currentScreen++;
+
+    } else if (currentScreen === 2) {
+        const nextGrid = buildScreen3();
+        await animateScrollDown(lastIntroGrid, nextGrid, introRenderer);
+        lastIntroGrid = nextGrid;
+        waitingForEnter = true;
+        currentScreen++;
+
+    } else {
+        startGameplay();
+    }
+}
+
+function startGameplay() {
+    document.getElementById('introScreen').classList.add('hidden');
+    document.getElementById('gameScreen').classList.remove('hidden');
+    gameActive = true;
+    startRound();
+}
+
+// ─── GAME GRID BUILDER ────────────────────────────────────────────────────────
+function buildGameGrid() {
+    const g = makeGrid();
+    writeStr(g, 0, 0,  `RED $${stock.price.toFixed(2)}`);
+    writeStr(g, 0, 30, `${roundTime}s`);
+    fillRow(g, 1, '─');
+
+    const chartTop = 3, chartH = 10;
+    const hist = stock.history.slice(-(COLS - 2));
+    const maxP = Math.max(...hist), minP = Math.min(...hist), range = maxP - minP || 1;
+    for (let c = 0; c < hist.length; c++) {
+        const bar = Math.round(((hist[c] - minP) / range) * (chartH - 1));
+        for (let r = 0; r < chartH; r++)
+            g[chartTop + chartH - 1 - r][c + 1] = r <= bar ? '·' : ' ';
+    }
+
+    fillRow(g, 16, '─');
+    if (currentMode) writeStr(g, 18, 0, currentMode === 'buy' ? 'BUY MODE' : 'SELL MODE');
+    writeStr(g, 20, 0, `Cash: $${player.cash.toFixed(2)}`);
+    writeStr(g, 21, 0, `Shares: ${player.shares}`);
+    writeStr(g, 22, 0, `Value: $${(player.shares * stock.price).toFixed(2)}`);
+    fillRow(g, 27, '─');
+    writeStr(g, 28, 0, 'Q: Buy | A: Sell');
+    writeStr(g, 29, 0, currentMode ? 'Enter qty and press ENTER' : 'Press Q or A to trade');
+    return g;
+}
+
+const updateGameDisplay = () =>
+    gameRenderer.render(buildGameGrid(), null, true);
+
+// ─── STOCK / ROUND LOGIC ──────────────────────────────────────────────────────
+function updateStockPrice() {
+    stock.price = parseFloat(
+        Math.max(1, stock.price * (1 + (Math.random() - 0.5) * stock.volatility)).toFixed(2)
+    );
+    stock.history.push(stock.price);
+    updateGameDisplay();
+}
+
+function startRound() {
+    roundTime = 30; stock.history = [stock.price]; currentMode = null;
+    updateGameDisplay();
+    if (roundInterval) clearInterval(roundInterval);
+    roundInterval = setInterval(() => {
+        roundTime--; updateGameDisplay();
+        if (roundTime <= 0) endRound();
+    }, 1000);
+}
+
+async function endRound() {
+    clearInterval(roundInterval);
+    gameActive = false;
+
+    const portfolio = player.shares * stock.price;
+    const total     = player.cash + portfolio;
+    const profit    = total - player.startingCash;
+
+    const resultsLines = [
+        'ROUND OVER', '', `Final: $${stock.price.toFixed(2)}`,
+        `Unsold: ${player.shares}`, '',
+        `Cash: $${player.cash.toFixed(2)}`,
+        `Portfolio: $${portfolio.toFixed(2)}`,
+        `Total: $${total.toFixed(2)}`, '',
+        `Profit: $${profit.toFixed(2)}`,
+        `(${((profit / player.startingCash) * 100).toFixed(1)}%)`
+    ];
+
+    document.getElementById('resultsScreen').classList.remove('hidden');
+    await animateScrollDown(buildGameGrid(), parseGrid(resultsLines), resultsRenderer);
+}
+
+function handleResultsEnter() {
+    document.getElementById('resultsScreen').classList.add('hidden');
+    Object.assign(player, { cash: 1000, shares: 0, startingCash: 1000 });
+    Object.assign(stock,  { price: 45, history: [45], volatility: 0.15 });
+    gameActive = true;
+    startRound();
+}
+
+// ─── TRADING ──────────────────────────────────────────────────────────────────
+function buyStock(qty) {
+    if (!qty || qty <= 0 || stock.price * qty > player.cash) return false;
+    player.cash -= stock.price * qty; player.shares += qty; return true;
+}
+function sellStock(qty) {
+    if (!qty || qty <= 0 || player.shares < qty) return false;
+    player.cash += stock.price * qty; player.shares -= qty; return true;
+}
+
+function submitCommand() {
+    if (waitingForEnter) { waitingForEnter = false; showIntroScreen(); return; }
+    if (!gameActive || !currentMode) return;
+    const qty = parseInt(prompt(`Enter quantity to ${currentMode}:`));
+    if ((currentMode === 'buy' ? buyStock : sellStock)(qty)) { currentMode = null; updateGameDisplay(); }
+}
+
+// ─── INPUT ────────────────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); submitCommand(); return; }
+    if (waitingForEnter || !gameActive) return;
+    if (e.key === 'q' || e.key === 'Q') {
+        e.preventDefault(); currentMode = currentMode === 'buy' ? null : 'buy'; updateGameDisplay();
+    } else if (e.key === 'a' || e.key === 'A') {
+        e.preventDefault(); currentMode = currentMode === 'sell' ? null : 'sell'; updateGameDisplay();
+    }
+});
+
+// ─── BOOT ─────────────────────────────────────────────────────────────────────
+// Defer until after the browser has painted so the canvas has real CSS dimensions.
+// A double-rAF ensures layout + paint have both completed before we read sizes.
+requestAnimationFrame(() => requestAnimationFrame(() => showIntroScreen()));
+</script>
 </body>
 </html>
