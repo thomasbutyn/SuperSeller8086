@@ -15,24 +15,11 @@
             overflow: hidden;
         }
 
-        /*
-         * The console is a <canvas> element.
-         * Canvas drawText positions each character at an exact pixel coordinate —
-         * no font metric, kerning, or glyph-width variance can shift columns.
-         * charW = consoleWidth / 40, charH = consoleHeight / 30.
-         * Every character is drawn at x = col * charW, y = row * charH.
-         * Perfect grid alignment is guaranteed by arithmetic, not typography.
-         *
-         * Text selection: an invisible overlay of 30 <div class="row"> elements
-         * sits on top of the canvas, each absolutely positioned to match a canvas
-         * row. They hold the plain text so the browser can select/copy it, while
-         * the canvas handles all visual rendering.
-         */
         .console-wrap {
             position: relative;
-            width: min(100vw, calc(100dvh * 4 / 3));
+            width: min(100vw, calc(100dvh * 40 / 40));
             max-width: 600px;
-            aspect-ratio: 4 / 3;
+            aspect-ratio: 40 / 40;
             border: 3px solid #ffffff;
             border-radius: 5px;
             box-shadow: 0 0 20px rgba(255,255,255,0.3);
@@ -44,13 +31,13 @@
             width: 100%;
             height: 100%;
             background: #1a1f3a;
+            cursor: pointer;
         }
 
-        /* Invisible text overlay — same grid as canvas, for selection only */
         .text-overlay {
             position: absolute;
             inset: 0;
-            pointer-events: none; /* let clicks pass through to canvas */
+            pointer-events: none;
         }
 
         .overlay-row {
@@ -58,26 +45,24 @@
             left: 0; right: 0;
             white-space: pre;
             overflow: hidden;
-            color: transparent;          /* invisible — canvas does the drawing */
+            color: transparent;
             background: transparent;
             font-family: monospace;
             user-select: text;
-            pointer-events: auto;        /* but allow text selection */
+            pointer-events: auto;
             cursor: text;
-            /* font-size / line-height set dynamically in JS to match canvas rows */
         }
 
-        /* Screens */
         .screen {
             position: fixed; inset: 0;
             background: #0a0e27;
             display: flex; justify-content: center; align-items: center;
             z-index: 1000;
-            padding: 20px;
+            padding: 12px;
         }
         .screen.hidden { display: none; }
 
-        #resultsScreen { flex-direction: column; gap: 30px; z-index: 999; }
+        #resultsScreen { flex-direction: column; gap: 16px; z-index: 999; }
 
         .results-button {
             background: #ffffff; color: #0a0e27;
@@ -114,7 +99,7 @@
 
 <script>
 // ─── GRID CONSTANTS ───────────────────────────────────────────────────────────
-const COLS = 40, ROWS = 30;
+const COLS = 40, ROWS = 40;
 
 // ─── 2D GRID HELPERS ──────────────────────────────────────────────────────────
 const makeGrid   = () => Array.from({ length: ROWS }, () => Array(COLS).fill(' '));
@@ -288,13 +273,119 @@ const gameRenderer    = new ConsoleRenderer(
     document.getElementById('gameOverlay')
 );
 
+// ─── CHARACTER KEYBOARD ───────────────────────────────────────────────────────
+// Keyboard occupies rows 30–37 (8 rows). Layout:
+//   Row 30: separator ═══
+//   Rows 31-32: Q  W  E  R  (each key is 10 cols wide)
+//   Rows 33-34: A  S  D  F
+//   Rows 35-37: ENTER (full width)
+
+const KB_TOP = 30;  // first row of keyboard area
+
+// Key definitions: label, grid col start (0-based in 40-col grid), key value, normal color, pressed color
+const KB_KEYS = [
+    // Row 1: Q W E R  — cols split into 4 × 10
+    { label: 'Q-BUY', row: 0, c1: 0,  c2: 9,  key: 'q', norm: '#22cc22', pressed: '#88ff88', bg: '#001800', pbg: '#003a00' },
+    { label: 'W-BUY', row: 0, c1: 10, c2: 19, key: 'w', norm: '#cc2222', pressed: '#ff8888', bg: '#180000', pbg: '#3a0000' },
+    { label: 'E-BUY', row: 0, c1: 20, c2: 29, key: 'e', norm: '#2255cc', pressed: '#88aaff', bg: '#000018', pbg: '#00003a' },
+    { label: 'R-BUY', row: 0, c1: 30, c2: 39, key: 'r', norm: '#ccaa00', pressed: '#ffee88', bg: '#181000', pbg: '#3a2800' },
+    // Row 2: A S D F
+    { label: 'A-SELL', row: 1, c1: 0,  c2: 9,  key: 'a', norm: '#88bb88', pressed: '#aaddaa', bg: '#0d1a0d', pbg: '#1a301a' },
+    { label: 'S-SELL', row: 1, c1: 10, c2: 19, key: 's', norm: '#bb8888', pressed: '#ddaaaa', bg: '#1a0d0d', pbg: '#30191a' },
+    { label: 'D-SELL', row: 1, c1: 20, c2: 29, key: 'd', norm: '#8899bb', pressed: '#aabbdd', bg: '#0d0d1a', pbg: '#19193a' },
+    { label: 'F-SELL', row: 1, c1: 30, c2: 39, key: 'f', norm: '#bbaa77', pressed: '#ddccaa', bg: '#1a160a', pbg: '#302a14' },
+    // ENTER: row 2, full width
+    { label: 'ENTER', row: 2, c1: 0, c2: 39, key: 'Enter', norm: '#ffffff', pressed: '#ffffff', bg: '#111111', pbg: '#444444' },
+];
+
+// Key press state: key → expiry timestamp
+const kbPressed = {};
+
+function flashKey(keyVal) {
+    kbPressed[keyVal] = Date.now() + 150;
+}
+
+function isKeyPressed(keyVal) {
+    return kbPressed[keyVal] && Date.now() < kbPressed[keyVal];
+}
+
+// Row bands: rows 0 & 1 are 3 grid rows tall each, ENTER (row 2) gets the rest
+// row 0 → grid rows 31-33, row 1 → 34-36, row 2 → 37 (1 row, clamped to grid)
+function kbGridRow(logicalRow) {
+    if (logicalRow === 2) return KB_TOP + 1 + 2 * 3; // row 37
+    return KB_TOP + 1 + logicalRow * 3;
+}
+
+function drawKeyboard(g, col) {
+    // Separator line
+    for (let c = 0; c < COLS; c++) { g[KB_TOP][c] = '═'; col[KB_TOP][c] = '#666688'; }
+
+    KB_KEYS.forEach(({ label, row, c1, c2, key, norm, pressed: pressedCol, bg, pbg }) => {
+        const on = isKeyPressed(key);
+        const borderCol = on ? pressedCol : norm;
+        const bgCol     = on ? pbg : bg;
+        const textCol   = on ? pressedCol : norm;
+
+        const gr = kbGridRow(row);
+        const isEnter = row === 2;
+        const r1 = gr, r2 = gr + 2;
+
+        // Fill background
+        for (let r = r1; r <= r2; r++)
+            for (let c = c1; c <= c2; c++) { g[r][c] = ' '; col[r][c] = bgCol; }
+
+        // Border
+        const setB = (r, c, ch) => { if (r < ROWS && c < COLS) { g[r][c] = ch; col[r][c] = borderCol; } };
+        setB(r1, c1, '┌'); setB(r1, c2, '┐');
+        setB(r2, c1, '└'); setB(r2, c2, '┘');
+        for (let c = c1 + 1; c < c2; c++) { setB(r1, c, '─'); setB(r2, c, '─'); }
+        for (let r = r1 + 1; r < r2; r++) { setB(r, c1, '│'); setB(r, c2, '│'); }
+
+        // Label centered
+        const midC = Math.floor((c1 + c2) / 2);
+        const midR = Math.floor((r1 + r2) / 2);
+        const lStart = midC - Math.floor(label.length / 2) + (row === 1 ? 1 : 0);
+        label.split('').forEach((ch, i) => {
+            const c = lStart + i;
+            if (c > c1 && c < c2) { g[midR][c] = ch; col[midR][c] = textCol; }
+        });
+    });
+}
+
+// Hit-test: given canvas pixel coords, return key or null
+function hitTestKeyboard(canvas, px, py) {
+    const cw = canvas.width, ch = canvas.height;
+    const charW = cw / COLS, charH = ch / ROWS;
+    const gridCol = Math.floor(px / charW);
+    const gridRow = Math.floor(py / charH);
+    if (gridRow < KB_TOP) return null;
+    return KB_KEYS.find(({ row, c1, c2 }) => {
+        const r1 = kbGridRow(row), r2 = r1 + 1;
+        return gridRow >= r1 && gridRow <= r2 && gridCol >= c1 && gridCol <= c2;
+    }) ?? null;
+}
+
+// Wire canvas click/touch for all three canvases
+function wireCanvasKeyboard(canvas) {
+    const fire = (px, py) => {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width  / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const hit = hitTestKeyboard(canvas, (px - rect.left) * scaleX, (py - rect.top) * scaleY);
+        if (!hit) return;
+        flashKey(hit.key);
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: hit.key, bubbles: true }));
+    };
+    canvas.addEventListener('pointerdown', e => { e.preventDefault(); fire(e.clientX, e.clientY); });
+}
+
 // ─── BROADWAY LIGHTS ──────────────────────────────────────────────────────────
-const LIGHTS = { r1: 0, r2: 29, c1: 0, c2: 39 };
+const LIGHTS      = { r1: 2, r2: 25, c1: 2, c2: 37 };
 const RINGS  = [
-    { rect: { r1: 10, r2: 18, c1: 11, c2: 28 }, on: '#33ff33', off: '#002a00' },
-    { rect: { r1:  8, r2: 20, c1:  9, c2: 30 }, on: '#ff3333', off: '#2a0000' },
-    { rect: { r1:  4, r2: 24, c1:  5, c2: 34 }, on: '#3399ff', off: '#00102a' },
-    { rect: { r1:  2, r2: 26, c1:  3, c2: 36 }, on: '#ffee33', off: '#2a2500' },
+    { rect: { r1: 11, r2: 17, c1: 11, c2: 28 }, on: '#33ff33', off: '#002a00' },
+    { rect: { r1:  9, r2: 19, c1:  9, c2: 30 }, on: '#ff3333', off: '#2a0000' },
+    { rect: { r1:  7, r2: 21, c1:  7, c2: 32 }, on: '#3399ff', off: '#00102a' },
+    { rect: { r1:  5, r2: 23, c1:  5, c2: 34 }, on: '#ffee33', off: '#2a2500' },
 ];
 
 function perimeterPositions({ r1, r2, c1, c2 }) {
@@ -309,7 +400,7 @@ function perimeterPositions({ r1, r2, c1, c2 }) {
 function paintRing(col, { r1, r2, c1, c2 }, color) {
     const set = (r, c) => { if (r >= 0 && r < ROWS && c >= 0 && c < COLS) col[r][c] = color; };
     for (let c = c1; c <= c2; c++) { set(r1, c); set(r2, c); }
-    for (let r = r1 + 1; r < r2; r++) { set(r, c1); set(r, c2); }
+    for (let r = r1; r <= r2; r++) { set(r, c1); set(r, c2); }
 }
 
 const lightsPerim    = perimeterPositions(LIGHTS);
@@ -326,33 +417,163 @@ function drawRect(g, { r1, r2, c1, c2 }, ch) {
 function buildBroadwayGrid(tick) {
     const g   = makeGrid();
     const col = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
-    const SEQ = [0, 1, -1, 2, 3];
-    const activeSteps = new Set([tick % 5, (tick + 1) % 5]);
-    const whiteOn = activeSteps.has(2);
+    // SEQ: green(0), red(1), blue(2), yellow(3), then 4 empty slots
+    // 3 consecutive steps lit at once → wave builds up then fades into a brief gap
+    const SEQ = [0, 1, 2, 3, -1, -1, -1, -1];
+    const CYCLE = SEQ.length;
+    const activeSteps = new Set([tick % CYCLE, (tick + 1) % CYCLE, (tick + 2) % CYCLE]);
+    const whiteOn = false;
 
-    RINGS.forEach(({ rect, on, off }, i) =>
-        paintRing(col, rect, activeSteps.has(SEQ.indexOf(i)) ? on : off)
-    );
+    RINGS.forEach(({ rect, on, off }, i) => {
+        const seqIdx = SEQ.indexOf(i);
+        paintRing(col, rect, seqIdx !== -1 && activeSteps.has(seqIdx) ? on : off);
+    });
     lightPositions.forEach(([r, c], i) => {
         const on = whiteOn || ((i - tick + N_LIGHTS) % N_LIGHTS) % 3 === 0;
         g[r][c]   = on ? '█' : '░';
         col[r][c] = on ? '#ffffff' : '#555555';
     });
+    // ── ANIMATION SEQUENCE ──────────────────────────────────────────────────────
+    // Phase layout (ticks):
+    //   0–15:  both scroll in from left
+    //  16–21:  both flash 3 times
+    //  22–37:  SS letters illuminate L→R (16 ticks)
+    //  38–41:  8086 digits illuminate L→R (4 ticks)
+    //  42–47:  both flash 3 times
+    //  48–51:  both hold fully lit
+    //  52–67:  both scroll out to right
+    //  68–71:  blank pause, then loop
+
+    const CYCLE_LEN = 72;
+    const phase = tick % CYCLE_LEN;
+
+    const ssStr = '* SUPER SELLER *';
+    const ssLen = ssStr.length;
+    const ssFinalCol = Math.floor((COLS - ssLen) / 2);
+    const ssColors = [
+        '#ff3333','#ff9933','#ffee33','#33ff33',
+        '#3399ff','#cc33ff','#ff33cc','#ffffff',
+        '#ff3333','#ffee33','#33ff33','#3399ff',
+        '#ff9933','#cc33ff','#ff33cc','#ffffff',
+    ];
+
+    const d8Str = '8086';
+    const d8Len = d8Str.length;
+    const d8FinalCol = Math.floor((COLS - d8Len) / 2);
+    const d8Colors = ['#ffee33','#ff9933','#ff3333','#ffee33'];
+
+    // Innermost rectangle interior bounds (don't overwrite its border)
+    const INNER = { r1: 11, r2: 17, c1: 11, c2: 28 };
+    const midR = Math.floor((INNER.r1 + INNER.r2) / 2); // row 14 — centre of inner box
+    const clipC = (c) => c > INNER.c1 && c < INNER.c2;
+
+    // Shared scroll offset (both elements move together)
+    let scrollOffset = 0, visible = true;
+    if (phase < 16) {
+        scrollOffset = -(ssLen - 1 - phase);
+    } else if (phase < 52) {
+        scrollOffset = 0;
+    } else if (phase < 68) {
+        scrollOffset = phase - 51;
+    } else {
+        visible = false;
+    }
+
+    if (visible) {
+        // ── Draw SUPER SELLER ──
+        ssStr.split('').forEach((ch, i) => {
+            const c = ssFinalCol + i + scrollOffset;
+            if (!clipC(c)) return;
+            g[midR - 2][c] = ch;
+            let letterLit;
+            if (phase < 16) {
+                letterLit = true; // scrolling in, fully lit
+            } else if (phase < 22) {
+                letterLit = (phase % 2) === 0; // initial flash
+            } else if (phase < 38) {
+                letterLit = i <= (phase - 22); // reveal L→R
+            } else if (phase < 42) {
+                letterLit = true; // SS fully lit while 8086 reveals
+            } else if (phase < 48) {
+                letterLit = (phase % 2) === 0; // final flash
+            } else {
+                letterLit = true; // hold / exit
+            }
+            col[midR - 2][c] = letterLit ? ssColors[i % ssColors.length] : '#1a1f3a';
+        });
+
+        // ── Draw 8086 ──
+        d8Str.split('').forEach((ch, i) => {
+            const c = d8FinalCol + i + scrollOffset;
+            if (!clipC(c)) return;
+            g[midR][c] = ch;
+            let digitLit;
+            if (phase < 16) {
+                digitLit = true; // scrolling in, fully lit
+            } else if (phase < 22) {
+                digitLit = (phase % 2) === 0; // initial flash
+            } else if (phase < 38) {
+                digitLit = false; // dark while SS reveals
+            } else if (phase < 42) {
+                digitLit = i <= (phase - 38); // reveal L→R after SS done
+            } else if (phase < 48) {
+                digitLit = (phase % 2) === 0; // final flash
+            } else {
+                digitLit = true; // hold / exit
+            }
+            col[midR][c] = digitLit ? d8Colors[i] : '#1a1f3a';
+        });
+    }
+    // Row 29 is outside the lights border — plain white, no color entry needed
+    writeCenter(g, 29, 'PRESS ENTER TO CONTINUE');
+
     RINGS.forEach(({ rect }) =>
         drawRect(g, rect, { h: '─', v: '│', tl: '┌', tr: '┐', bl: '└', br: '┘' })
     );
-    drawRect(g, LIGHTS, { h: '═', v: '║', tl: '╔', tr: '╗', bl: '╚', br: '╝' });
 
-    const midR = Math.floor(ROWS / 2);
-    writeCenter(g, midR - 1, '* SUPER SELLER *');
-    writeCenter(g, midR + 1, '    8  0  8  6   ');
-    writeCenter(g, 29, 'PRESS ENTER TO CONTINUE');
+    // White border: Broadway-style bulbs — every 2nd perimeter cell is a bulb
+    {
+        const { r1, r2, c1, c2 } = LIGHTS;
+        const perim = [];
+        for (let c = c1; c <= c2; c++) perim.push([r1, c]);
+        for (let r = r1 + 1; r <= r2; r++) perim.push([r, c2]);
+        for (let c = c2 - 1; c >= c1; c--) perim.push([r2, c]);
+        for (let r = r2 - 1; r > r1; r--) perim.push([r, c1]);
+
+        perim.forEach(([r, c], i) => {
+            const on = ((i - tick + perim.length) % perim.length) % 4 === 0;
+            g[r][c]   = on ? '●' : '○';
+            col[r][c] = on ? '#ffffff' : '#444444';
+        });
+    }
+
+    // Static white trim — one frame inside the bulb ring (smaller), one outside (larger)
+    {
+        const trimFrames = [
+            { r1: 3, r2: 24, c1: 3, c2: 36 },  // smaller: inside the flashing lights
+            { r1: 1, r2: 26, c1: 0, c2: 39 },  // larger: outside the flashing lights
+        ];
+        trimFrames.forEach(({ r1, r2, c1, c2 }) => {
+            const setTrim = (r, c, ch) => {
+                if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return;
+                g[r][c]   = ch;
+                col[r][c] = '#cccccc';
+            };
+            setTrim(r1, c1, '╔'); setTrim(r1, c2, '╗');
+            setTrim(r2, c1, '╚'); setTrim(r2, c2, '╝');
+            for (let c = c1 + 1; c < c2; c++) { setTrim(r1, c, '═'); setTrim(r2, c, '═'); }
+            for (let r = r1 + 1; r < r2; r++) { setTrim(r, c1, '║'); setTrim(r, c2, '║'); }
+        });
+    }
+
+    drawKeyboard(g, col);
     return { g, col };
 }
 
 // ─── STATIC INTRO SCREENS ─────────────────────────────────────────────────────
 function buildScreen2() {
     const g = makeGrid();
+    const col = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
     writeCenter(g, 2,  'WELCOME TO');
     writeCenter(g, 4,  'STOCK TRADING');
     writeCenter(g, 7,  '! WARNING !');
@@ -362,11 +583,13 @@ function buildScreen2() {
     writeCenter(g, 14, 'Buy & sell quickly to');
     writeCenter(g, 15, 'maximize your profits!');
     writeCenter(g, 29, 'PRESS ENTER TO CONTINUE');
+    drawKeyboard(g, col);
     return g;
 }
 
 function buildScreen3() {
     const g = makeGrid();
+    const col = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
     writeCenter(g, 3,  'HOW TO PLAY');
     writeCenter(g, 6,  'Q  =  BUY');
     writeCenter(g, 8,  'A  =  SELL');
@@ -375,6 +598,7 @@ function buildScreen3() {
     writeCenter(g, 15, 'Type a quantity then');
     writeCenter(g, 16, 'press ENTER to confirm.');
     writeCenter(g, 29, 'PRESS ENTER TO CONTINUE');
+    drawKeyboard(g, col);
     return g;
 }
 
@@ -415,7 +639,7 @@ async function showIntroScreen() {
         lastIntroGrid = firstG;
         broadwayTick  = 0;
         broadwayInterval = setInterval(() => {
-            broadwayTick = (broadwayTick + 1) % N_LIGHTS;
+            broadwayTick++;
             const { g, col } = buildBroadwayGrid(broadwayTick);
             introRenderer.render(g, col);
         }, 120);
@@ -453,6 +677,7 @@ function startGameplay() {
 // ─── GAME GRID BUILDER ────────────────────────────────────────────────────────
 function buildGameGrid() {
     const g = makeGrid();
+    const col = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
     writeStr(g, 0, 0,  `RED $${stock.price.toFixed(2)}`);
     writeStr(g, 0, 30, `${roundTime}s`);
     fillRow(g, 1, '─');
@@ -474,11 +699,14 @@ function buildGameGrid() {
     fillRow(g, 27, '─');
     writeStr(g, 28, 0, 'Q: Buy | A: Sell');
     writeStr(g, 29, 0, currentMode ? 'Enter qty and press ENTER' : 'Press Q or A to trade');
-    return g;
+    drawKeyboard(g, col);
+    return { g, col };
 }
 
-const updateGameDisplay = () =>
-    gameRenderer.render(buildGameGrid(), null, true);
+const updateGameDisplay = () => {
+    const { g, col } = buildGameGrid();
+    gameRenderer.render(g, col, true);
+};
 
 // ─── STOCK / ROUND LOGIC ──────────────────────────────────────────────────────
 function updateStockPrice() {
@@ -518,7 +746,8 @@ async function endRound() {
     ];
 
     document.getElementById('resultsScreen').classList.remove('hidden');
-    await animateScrollDown(buildGameGrid(), parseGrid(resultsLines), resultsRenderer);
+    const { g: gameG } = buildGameGrid();
+    await animateScrollDown(gameG, parseGrid(resultsLines), resultsRenderer);
 }
 
 function handleResultsEnter() {
@@ -547,7 +776,13 @@ function submitCommand() {
 }
 
 // ─── INPUT ────────────────────────────────────────────────────────────────────
+function flashKeyButton(key) {
+    flashKey(key.toLowerCase());
+    flashKey(key); // covers 'Enter' etc
+}
+
 document.addEventListener('keydown', e => {
+    flashKeyButton(e.key);
     if (e.key === 'Enter') { e.preventDefault(); submitCommand(); return; }
     if (waitingForEnter || !gameActive) return;
     if (e.key === 'q' || e.key === 'Q') {
@@ -557,7 +792,10 @@ document.addEventListener('keydown', e => {
     }
 });
 
-// ─── BOOT ─────────────────────────────────────────────────────────────────────
+// ─── ON-SCREEN KEYBOARD ───────────────────────────────────────────────────────
+wireCanvasKeyboard(document.getElementById('introCanvas'));
+wireCanvasKeyboard(document.getElementById('resultsCanvas'));
+wireCanvasKeyboard(document.getElementById('gameCanvas'));
 // Defer until after the browser has painted so the canvas has real CSS dimensions.
 // A double-rAF ensures layout + paint have both completed before we read sizes.
 requestAnimationFrame(() => requestAnimationFrame(() => showIntroScreen()));
