@@ -317,8 +317,32 @@ function kbGridRow(logicalRow) {
 }
 
 function drawKeyboard(g, col) {
-    // Separator line
-    for (let c = 0; c < COLS; c++) { g[KB_TOP][c] = '═'; col[KB_TOP][c] = '#666688'; }
+    // ── Colour counters (rows KB_TOP-3 to KB_TOP-1, 4 boxes each 10 cols wide) ──
+    const counterTop = KB_TOP - 2;
+    const COUNTERS = [
+        { val: player.green,  norm: '#22cc22', c1: 0,  c2: 9  },
+        { val: player.red,    norm: '#cc2222', c1: 10, c2: 19 },
+        { val: player.blue,   norm: '#2255cc', c1: 20, c2: 29 },
+        { val: player.yellow, norm: '#ccaa00', c1: 30, c2: 39 },
+    ];
+    COUNTERS.forEach(({ val, norm, c1, c2 }) => {
+        const setC = (r, c, ch) => { if (r >= 0 && r < ROWS && c >= 0 && c < COLS) { g[r][c] = ch; col[r][c] = norm; } };
+        const r1 = counterTop, r2 = counterTop + 2;
+        // Border
+        setC(r1, c1, '┌'); setC(r1, c2, '┐');
+        setC(r2, c1, '└'); setC(r2, c2, '┘');
+        for (let c = c1 + 1; c < c2; c++) { setC(r1, c, '─'); setC(r2, c, '─'); }
+        for (let r = r1 + 1; r < r2; r++) { setC(r, c1, '│'); setC(r, c2, '│'); }
+        // Value centered on middle row
+        const midR = r1 + 1;
+        const text = String(val);
+        const midC = Math.floor((c1 + c2) / 2);
+        const start = midC - Math.floor(text.length / 2);
+        text.split('').forEach((ch, i) => {
+            const c = start + i;
+            if (c > c1 && c < c2) { g[midR][c] = ch; col[midR][c] = norm; }
+        });
+    });
 
     KB_KEYS.forEach(({ label, row, c1, c2, key, norm, pressed: pressedCol, bg, pbg }) => {
         const on = isKeyPressed(key);
@@ -360,7 +384,7 @@ function hitTestKeyboard(canvas, px, py) {
     const gridRow = Math.floor(py / charH);
     if (gridRow < KB_TOP) return null;
     return KB_KEYS.find(({ row, c1, c2 }) => {
-        const r1 = kbGridRow(row), r2 = r1 + 1;
+        const r1 = kbGridRow(row), r2 = r1 + 2;
         return gridRow >= r1 && gridRow <= r2 && gridCol >= c1 && gridCol <= c2;
     }) ?? null;
 }
@@ -525,7 +549,7 @@ function buildBroadwayGrid(tick) {
         });
     }
     // Row 29 is outside the lights border — plain white, no color entry needed
-    writeCenter(g, 29, 'PRESS ENTER TO CONTINUE');
+    writeCenter(g, 27, 'PRESS ENTER TO CONTINUE');
 
     RINGS.forEach(({ rect }) =>
         drawRect(g, rect, { h: '─', v: '│', tl: '┌', tr: '┐', bl: '└', br: '┘' })
@@ -582,7 +606,7 @@ function buildScreen2() {
     writeCenter(g, 12, 'and become WORTHLESS');
     writeCenter(g, 14, 'Buy & sell quickly to');
     writeCenter(g, 15, 'maximize your profits!');
-    writeCenter(g, 29, 'PRESS ENTER TO CONTINUE');
+    writeCenter(g, 27, 'PRESS ENTER TO CONTINUE');
     drawKeyboard(g, col);
     return g;
 }
@@ -597,7 +621,7 @@ function buildScreen3() {
     writeCenter(g, 12, 'and trade wisely.');
     writeCenter(g, 15, 'Type a quantity then');
     writeCenter(g, 16, 'press ENTER to confirm.');
-    writeCenter(g, 29, 'PRESS ENTER TO CONTINUE');
+    writeCenter(g, 27, 'PRESS ENTER TO CONTINUE');
     drawKeyboard(g, col);
     return g;
 }
@@ -628,7 +652,7 @@ let broadwayInterval = null;
 let broadwayTick    = 0;
 
 const stock  = { price: 45, volatility: 0.15, history: [45] };
-const player = { cash: 1000, shares: 0, startingCash: 1000 };
+const player = { cash: 1000, shares: 0, startingCash: 1000, green: 0, red: 0, blue: 0, yellow: 0 };
 let roundTime = 30, roundInterval = null, currentMode = null;
 
 // ─── INTRO FLOW ───────────────────────────────────────────────────────────────
@@ -696,9 +720,6 @@ function buildGameGrid() {
     writeStr(g, 20, 0, `Cash: $${player.cash.toFixed(2)}`);
     writeStr(g, 21, 0, `Shares: ${player.shares}`);
     writeStr(g, 22, 0, `Value: $${(player.shares * stock.price).toFixed(2)}`);
-    fillRow(g, 27, '─');
-    writeStr(g, 28, 0, 'Q: Buy | A: Sell');
-    writeStr(g, 29, 0, currentMode ? 'Enter qty and press ENTER' : 'Press Q or A to trade');
     drawKeyboard(g, col);
     return { g, col };
 }
@@ -752,30 +773,40 @@ async function endRound() {
 
 function handleResultsEnter() {
     document.getElementById('resultsScreen').classList.add('hidden');
-    Object.assign(player, { cash: 1000, shares: 0, startingCash: 1000 });
+    Object.assign(player, { cash: 1000, shares: 0, startingCash: 1000, green: 0, red: 0, blue: 0, yellow: 0 });
     Object.assign(stock,  { price: 45, history: [45], volatility: 0.15 });
     gameActive = true;
     startRound();
 }
 
 // ─── TRADING ──────────────────────────────────────────────────────────────────
+const KEY_COLOR = { q: 'green', w: 'red', e: 'blue', r: 'yellow', a: 'green', s: 'red', d: 'blue', f: 'yellow' };
+
 function buyStock(qty) {
     if (!qty || qty <= 0 || stock.price * qty > player.cash) return false;
-    player.cash -= stock.price * qty; player.shares += qty; return true;
+    player.cash -= stock.price * qty; player.shares += qty;
+    const color = KEY_COLOR[activeKey];
+    if (color) player[color] += qty;
+    return true;
 }
 function sellStock(qty) {
     if (!qty || qty <= 0 || player.shares < qty) return false;
-    player.cash += stock.price * qty; player.shares -= qty; return true;
+    player.cash += stock.price * qty; player.shares -= qty;
+    const color = KEY_COLOR[activeKey];
+    if (color) player[color] = Math.max(0, player[color] - qty);
+    return true;
 }
 
 function submitCommand() {
     if (waitingForEnter) { waitingForEnter = false; showIntroScreen(); return; }
     if (!gameActive || !currentMode) return;
     const qty = parseInt(prompt(`Enter quantity to ${currentMode}:`));
-    if ((currentMode === 'buy' ? buyStock : sellStock)(qty)) { currentMode = null; updateGameDisplay(); }
+    if ((currentMode === 'buy' ? buyStock : sellStock)(qty)) { currentMode = null; activeKey = null; updateGameDisplay(); }
 }
 
 // ─── INPUT ────────────────────────────────────────────────────────────────────
+let activeKey = null;
+
 function flashKeyButton(key) {
     flashKey(key.toLowerCase());
     flashKey(key); // covers 'Enter' etc
@@ -784,11 +815,32 @@ function flashKeyButton(key) {
 document.addEventListener('keydown', e => {
     flashKeyButton(e.key);
     if (e.key === 'Enter') { e.preventDefault(); submitCommand(); return; }
-    if (waitingForEnter || !gameActive) return;
-    if (e.key === 'q' || e.key === 'Q') {
-        e.preventDefault(); currentMode = currentMode === 'buy' ? null : 'buy'; updateGameDisplay();
-    } else if (e.key === 'a' || e.key === 'A') {
-        e.preventDefault(); currentMode = currentMode === 'sell' ? null : 'sell'; updateGameDisplay();
+
+    const buyKeys  = { q: 'q', Q: 'q', w: 'w', W: 'w', e: 'e', E: 'e', r: 'r', R: 'r' };
+    const sellKeys = { a: 'a', A: 'a', s: 's', S: 's', d: 'd', D: 'd', f: 'f', F: 'f' };
+
+    if (buyKeys[e.key] !== undefined) {
+        e.preventDefault();
+        activeKey = buyKeys[e.key];
+        if (waitingForEnter) {
+            const color = KEY_COLOR[activeKey];
+            if (color) player[color] += 1;
+            const { g, col } = buildBroadwayGrid(broadwayTick);
+            introRenderer.render(g, col);
+        } else if (gameActive) {
+            currentMode = currentMode === 'buy' ? null : 'buy'; updateGameDisplay();
+        }
+    } else if (sellKeys[e.key] !== undefined) {
+        e.preventDefault();
+        activeKey = sellKeys[e.key];
+        if (waitingForEnter) {
+            const color = KEY_COLOR[activeKey];
+            if (color) player[color] = Math.max(0, player[color] - 1);
+            const { g, col } = buildBroadwayGrid(broadwayTick);
+            introRenderer.render(g, col);
+        } else if (gameActive) {
+            currentMode = currentMode === 'sell' ? null : 'sell'; updateGameDisplay();
+        }
     }
 });
 
