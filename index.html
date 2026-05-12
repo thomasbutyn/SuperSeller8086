@@ -15,11 +15,12 @@
             overflow: hidden;
         }
 
+        /* Single fixed console — never moves */
         .console-wrap {
             position: relative;
-            width: min(100vw, calc(100dvh * 40 / 40));
+            width: min(100vw, calc(100dvh * 40 / 48));
             max-width: 600px;
-            aspect-ratio: 40 / 40;
+            aspect-ratio: 40 / 48;
             border: 3px solid #ffffff;
             border-radius: 5px;
             box-shadow: 0 0 20px rgba(255,255,255,0.3);
@@ -54,24 +55,20 @@
             pointer-events: none;
         }
 
-        .screen {
-            position: fixed; inset: 0;
-            background: #0a0e27;
-            display: flex; justify-content: center; align-items: center;
-            z-index: 1000;
-            padding: 12px;
-        }
-        .screen.hidden { display: none; }
-
-        #resultsScreen { flex-direction: column; gap: 16px; z-index: 999; }
-
-        .results-button {
+        /* Results NEXT button — fixed over the console, centered bottom area */
+        #resultsBtn {
+            display: none;
+            position: fixed;
+            /* We'll position it programmatically via JS to sit over the console */
             background: #ffffff; color: #0a0e27;
             border: none; padding: 15px 30px;
             font-family: monospace; font-size: 12px;
-            border-radius: 3px; cursor: pointer; transition: all 0.3s;
+            border-radius: 3px; transition: all 0.3s;
+            z-index: 500;
+            cursor: pointer;
         }
-        .results-button:hover { background: #cccccc; box-shadow: 0 0 10px rgba(255,255,255,0.5); }
+        #resultsBtn:hover { background: #cccccc; box-shadow: 0 0 10px rgba(255,255,255,0.5); }
+
         #cursor { position: fixed; top: 0; left: 0; pointer-events: none; z-index: 99999; }
     </style>
 </head>
@@ -79,45 +76,27 @@
 
 <div id="cursor"><svg id="cursorSvg" xmlns="http://www.w3.org/2000/svg"></svg></div>
 
-<div id="qtyModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);flex-direction:column;justify-content:center;align-items:center;gap:14px;z-index:2000;">
-    <div style="background:#1a1f3a;border:2px solid #fff;border-radius:5px;padding:24px 32px;display:flex;flex-direction:column;align-items:center;gap:14px;font-family:monospace;color:#fff;min-width:240px;">
-        <div id="qtyLabel" style="font-size:14px;letter-spacing:1px;">ENTER QUANTITY</div>
-        <input type="number" id="qtyInput" min="1" value="1" inputmode="numeric" style="background:#0a0e27;color:#fff;border:1px solid #fff;border-radius:3px;font-family:monospace;font-size:20px;width:120px;text-align:center;padding:6px;" />
-        <div style="display:flex;gap:12px;">
-            <button onclick="closeQtyModal()" style="background:#555;color:#fff;border:none;padding:10px 22px;font-family:monospace;font-size:12px;border-radius:3px;">CANCEL</button>
-            <button onclick="confirmQty()" style="background:#fff;color:#0a0e27;border:none;padding:10px 22px;font-family:monospace;font-size:12px;border-radius:3px;">OK</button>
-        </div>
-    </div>
+
+<!-- Single persistent console -->
+<div class="console-wrap" id="consoleWrap">
+    <canvas id="mainCanvas"></canvas>
+    <div class="text-overlay" id="mainOverlay"></div>
 </div>
 
-<div class="screen" id="introScreen">
-    <div class="console-wrap" id="introWrap">
-        <canvas id="introCanvas"></canvas>
-        <div class="text-overlay" id="introOverlay"></div>
-    </div>
-</div>
-
-<div class="screen hidden" id="resultsScreen">
-    <div class="console-wrap" id="resultsWrap">
-        <canvas id="resultsCanvas"></canvas>
-        <div class="text-overlay" id="resultsOverlay"></div>
-    </div>
-    <button class="results-button" onclick="handleResultsEnter()">NEXT</button>
-</div>
-
-<div class="screen hidden" id="gameScreen">
-    <div class="console-wrap" id="gameWrap">
-        <canvas id="gameCanvas"></canvas>
-        <div class="text-overlay" id="gameOverlay"></div>
-    </div>
-</div>
+<button id="resultsBtn" onclick="handleResultsEnter()">NEXT</button>
 
 <script>
 // ─── GRID CONSTANTS ───────────────────────────────────────────────────────────
-const COLS = 40, ROWS = 40;
+const COLS = 40, ROWS = 48;
+
+// KB_TOP splits the screen: rows 0–(KB_TOP-1) are the "content" area that transitions.
+// Rows KB_TOP–47 are the persistent keyboard drawn every frame from the frozen keyboard grid.
+// Layout: rows 33-35=cash row, 36-38=counters(3 tall), 39-41=QWER, 42-44=ASDF, 45-47=ENTER
+const KB_TOP = 33;
 
 // ─── 2D GRID HELPERS ──────────────────────────────────────────────────────────
 const makeGrid   = () => Array.from({ length: ROWS }, () => Array(COLS).fill(' '));
+const makeColorGrid = () => Array.from({ length: ROWS }, () => Array(COLS).fill(null));
 const parseGrid  = lines => Array.from({ length: ROWS }, (_, r) => {
     const line = (lines[r] ?? '').trimStart();
     return Array.from({ length: COLS }, (_, c) => line[c] ?? ' ');
@@ -130,33 +109,28 @@ const writeCenter = (g, row, str) =>
 
 // ─── CANVAS RENDERER ──────────────────────────────────────────────────────────
 /**
- * Each console is backed by a <canvas> + an invisible text overlay.
- * We store a Console object per screen to keep state together.
+ * Single ConsoleRenderer for the one persistent canvas.
  *
- * Drawing:
- *   charW = canvas.width  / COLS   (exact pixel width per column)
- *   charH = canvas.height / ROWS   (exact pixel height per row)
- *   Each character is drawn at:
- *     x = col * charW + charW/2   (center of cell, textAlign='center')
- *     y = row * charH + charH/2   (center of cell, textBaseline='middle')
+ * We split rendering into two zones:
+ *   • Content zone  (rows 0 .. KB_TOP-1): updated by screen transitions / game logic
+ *   • Keyboard zone (rows KB_TOP .. 39):  always rendered from the frozen kbGrid / kbColorGrid
  *
- * This means column positions are pure arithmetic — the font cannot shift them.
- *
- * The canvas is sized to its CSS pixel size via a ResizeObserver, keeping the
- * backing buffer matching the display size exactly (no blur, no scaling artifact).
+ * render(contentGrid, contentColors, isGame) merges both zones before drawing.
  */
 class ConsoleRenderer {
     constructor(canvasEl, overlayEl) {
-        this.canvas      = canvasEl;
-        this.overlay     = overlayEl;
-        this.ctx         = canvasEl.getContext('2d');
-        this._grid       = makeGrid();
-        this._colors     = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
-        this._lastGrid   = null;   // cached for re-render on resize
-        this._lastColors = null;
-        this._lastIsGame = false;
+        this.canvas  = canvasEl;
+        this.overlay = overlayEl;
+        this.ctx     = canvasEl.getContext('2d');
 
-        // Match canvas buffer to CSS size
+        this._lastContent      = null;
+        this._lastContentColor = null;
+        this._lastIsGame       = false;
+
+        // Frozen keyboard rows — updated by drawKeyboard() calls
+        this.kbGrid  = makeGrid();
+        this.kbColor = makeColorGrid();
+
         this._ro = new ResizeObserver(() => this._resize());
         this._ro.observe(canvasEl);
         this._resize();
@@ -165,7 +139,7 @@ class ConsoleRenderer {
         for (let r = 0; r < ROWS; r++) {
             const div = document.createElement('div');
             div.className = 'overlay-row';
-            div.id = `${canvasEl.id}-row-${r}`;
+            div.id = `main-row-${r}`;
             this.overlay.appendChild(div);
         }
         this._positionOverlay();
@@ -175,19 +149,17 @@ class ConsoleRenderer {
         const rect = this.canvas.getBoundingClientRect();
         const w = Math.round(rect.width);
         const h = Math.round(rect.height);
-        if (!w || !h) return; // not yet laid out — ResizeObserver will fire again
+        if (!w || !h) return;
         this.canvas.width  = w;
         this.canvas.height = h;
         this._positionOverlay();
-        if (this._lastGrid) this.render(this._lastGrid, this._lastColors, this._lastIsGame);
+        if (this._lastContent) this.render(this._lastContent, this._lastContentColor, this._lastIsGame);
     }
 
     _positionOverlay() {
-        const cw = this.canvas.width  || this.canvas.offsetWidth;
         const ch = this.canvas.height || this.canvas.offsetHeight;
         const charH = ch / ROWS;
-        const fontSize = charH * 0.95; // match canvas font size
-
+        const fontSize = charH * 0.95;
         Array.from(this.overlay.children).forEach((div, r) => {
             div.style.top        = `${(r / ROWS * 100)}%`;
             div.style.height     = `${(1 / ROWS * 100)}%`;
@@ -196,12 +168,54 @@ class ConsoleRenderer {
         });
     }
 
-    /** Render a grid+colorGrid, diffing against last frame for the overlay */
-    render(grid, colorGrid = null, isGame = false) {
-        this._lastGrid   = grid;
-        this._lastColors = colorGrid;
-        this._lastIsGame = isGame;
+    /**
+     * Merge content zone (rows 0..KB_TOP-1) with frozen keyboard zone (rows KB_TOP..39)
+     * then draw the full merged grid.
+     */
+    render(contentGrid, contentColors = null, isGame = false) {
+        this._lastContent      = contentGrid;
+        this._lastContentColor = contentColors;
+        this._lastIsGame       = isGame;
 
+        // Build merged full grid
+        const grid  = [];
+        const colors = [];
+        for (let r = 0; r < ROWS; r++) {
+            if (r < KB_TOP) {
+                grid.push(contentGrid[r]);
+                colors.push(contentColors ? contentColors[r] : Array(COLS).fill(null));
+            } else {
+                grid.push(this.kbGrid[r]);
+                colors.push(this.kbColor[r]);
+            }
+        }
+
+        this._draw(grid, colors, isGame);
+    }
+
+    /**
+     * Render the keyboard zone only (used when only KB state changes, e.g. key flash).
+     * Re-uses last content grid.
+     */
+    renderKeyboardOnly() {
+        if (!this._lastContent) return;
+        // Merge last content with current keyboard state and redraw
+        // — but only call _draw, don't update _lastContent
+        const grid  = [];
+        const colors = [];
+        for (let r = 0; r < ROWS; r++) {
+            if (r < KB_TOP) {
+                grid.push(this._lastContent[r]);
+                colors.push(this._lastContentColor ? this._lastContentColor[r] : Array(COLS).fill(null));
+            } else {
+                grid.push(this.kbGrid[r]);
+                colors.push(this.kbColor[r]);
+            }
+        }
+        this._draw(grid, colors, this._lastIsGame);
+    }
+
+    _draw(grid, colorGrid, isGame) {
         const cw = this.canvas.width;
         const ch = this.canvas.height;
         const charW = cw / COLS;
@@ -209,29 +223,9 @@ class ConsoleRenderer {
 
         const ctx = this.ctx;
         ctx.clearRect(0, 0, cw, ch);
-
-        // Background
         ctx.fillStyle = '#1a1f3a';
         ctx.fillRect(0, 0, cw, ch);
 
-        // Game grid lines
-        if (isGame) {
-            ctx.strokeStyle = '#0a0e27';
-            ctx.lineWidth = 1;
-            for (let r = 1; r < ROWS; r++) {
-                ctx.beginPath();
-                ctx.moveTo(0, r * charH);
-                ctx.lineTo(cw, r * charH);
-                ctx.stroke();
-            }
-        }
-
-        /*
-         * Font sizing: charH * 0.72 keeps the glyph within the cell vertically.
-         * We use a system monospace stack so the font is always available and
-         * renders quickly, but the key point is that we don't use font metrics
-         * for positioning — x/y come from col*charW and row*charH.
-         */
         const fontSize = Math.floor(charH * 0.95);
         ctx.font = `${fontSize}px "Courier New", Courier, monospace`;
         ctx.textAlign    = 'center';
@@ -241,11 +235,9 @@ class ConsoleRenderer {
 
         for (let r = 0; r < ROWS; r++) {
             let rowText = '';
-
             for (let c = 0; c < COLS; c++) {
-                const ch_  = grid[r][c];
+                const ch_   = grid[r][c];
                 const color = colorGrid?.[r]?.[c] ?? null;
-
                 const glowColor = color ?? '#ffffff';
                 ctx.fillStyle = color ?? '#ffffff';
                 const x = c * charW + charW / 2, y = r * charH + charH / 2;
@@ -254,91 +246,100 @@ class ConsoleRenderer {
                 ctx.shadowBlur = 5;  ctx.globalAlpha = 0.7; ctx.fillText(ch_, x, y);
                 ctx.shadowBlur = 2;  ctx.globalAlpha = 1.0; ctx.fillText(ch_, x, y);
                 ctx.shadowBlur = 0;  ctx.fillText(ch_, x, y);
-
                 rowText += ch_;
             }
-
-            // Update overlay row text for selection (only if changed)
             if (overlayRows[r] && overlayRows[r].textContent !== rowText) {
                 overlayRows[r].textContent = rowText;
             }
         }
-
         ctx.shadowBlur = 0;
         ctx.globalAlpha = 1;
     }
 }
 
-// ─── CONSOLE INSTANCES ────────────────────────────────────────────────────────
-const introRenderer   = new ConsoleRenderer(
-    document.getElementById('introCanvas'),
-    document.getElementById('introOverlay')
-);
-const resultsRenderer = new ConsoleRenderer(
-    document.getElementById('resultsCanvas'),
-    document.getElementById('resultsOverlay')
-);
-const gameRenderer    = new ConsoleRenderer(
-    document.getElementById('gameCanvas'),
-    document.getElementById('gameOverlay')
+// ─── SINGLE RENDERER INSTANCE ─────────────────────────────────────────────────
+const renderer = new ConsoleRenderer(
+    document.getElementById('mainCanvas'),
+    document.getElementById('mainOverlay')
 );
 
 // ─── CHARACTER KEYBOARD ───────────────────────────────────────────────────────
-// Keyboard occupies rows 30–37 (8 rows). Layout:
-//   Row 30: separator ═══
-//   Rows 31-32: Q  W  E  R  (each key is 10 cols wide)
-//   Rows 33-34: A  S  D  F
-//   Rows 35-37: ENTER (full width)
+// Keyboard layout (grid rows):
+//   KB_TOP+0..1: separator line + counter boxes (drawn by drawKeyboard into kbGrid)
+//   KB_TOP+2: counters row 2
+//   rows KB_TOP+3..KB_TOP+4: Q W E R keys (2 rows tall)
+//   rows KB_TOP+5..KB_TOP+6: A S D F keys
+//   rows KB_TOP+7..KB_TOP+9: ENTER key
 
-const KB_TOP = 30;  // first row of keyboard area
-
-// Key definitions: label, grid col start (0-based in 40-col grid), key value, normal color, pressed color
 const KB_KEYS = [
-    // Row 1: Q W E R  — cols split into 4 × 10
-    { label: 'Q-BUY', row: 0, c1: 0,  c2: 9,  key: 'q', norm: '#22cc22', pressed: '#88ff88', bg: '#001800', pbg: '#003a00' },
-    { label: 'W-BUY', row: 0, c1: 10, c2: 19, key: 'w', norm: '#cc2222', pressed: '#ff8888', bg: '#180000', pbg: '#3a0000' },
-    { label: 'E-BUY', row: 0, c1: 20, c2: 29, key: 'e', norm: '#2255cc', pressed: '#88aaff', bg: '#000018', pbg: '#00003a' },
-    { label: 'R-BUY', row: 0, c1: 30, c2: 39, key: 'r', norm: '#ccaa00', pressed: '#ffee88', bg: '#181000', pbg: '#3a2800' },
-    // Row 2: A S D F
+    { label: 'Q-BUY',  row: 0, c1: 0,  c2: 9,  key: 'q', norm: '#22cc22', pressed: '#88ff88', bg: '#001800', pbg: '#003a00' },
+    { label: 'W-BUY',  row: 0, c1: 10, c2: 19, key: 'w', norm: '#cc2222', pressed: '#ff8888', bg: '#180000', pbg: '#3a0000' },
+    { label: 'E-BUY',  row: 0, c1: 20, c2: 29, key: 'e', norm: '#2255cc', pressed: '#88aaff', bg: '#000018', pbg: '#00003a' },
+    { label: 'R-BUY',  row: 0, c1: 30, c2: 39, key: 'r', norm: '#ccaa00', pressed: '#ffee88', bg: '#181000', pbg: '#3a2800' },
     { label: 'A-SELL', row: 1, c1: 0,  c2: 9,  key: 'a', norm: '#88bb88', pressed: '#aaddaa', bg: '#0d1a0d', pbg: '#1a301a' },
     { label: 'S-SELL', row: 1, c1: 10, c2: 19, key: 's', norm: '#bb8888', pressed: '#ddaaaa', bg: '#1a0d0d', pbg: '#30191a' },
     { label: 'D-SELL', row: 1, c1: 20, c2: 29, key: 'd', norm: '#8899bb', pressed: '#aabbdd', bg: '#0d0d1a', pbg: '#19193a' },
     { label: 'F-SELL', row: 1, c1: 30, c2: 39, key: 'f', norm: '#bbaa77', pressed: '#ddccaa', bg: '#1a160a', pbg: '#302a14' },
-    // ENTER: row 2, full width
-    { label: 'ENTER', row: 2, c1: 0, c2: 39, key: 'Enter', norm: '#ffffff', pressed: '#ffffff', bg: '#111111', pbg: '#444444' },
+    { label: 'ENTER',  row: 2, c1: 0,  c2: 39, key: 'Enter', norm: '#ffffff', pressed: '#ffffff', bg: '#111111', pbg: '#444444' },
 ];
 
-// Key press state: key → expiry timestamp
-const kbPressed = {};
 
-function flashKey(keyVal) {
-    kbPressed[keyVal] = Date.now() + 150;
-}
 
-function isKeyPressed(keyVal) {
-    return kbPressed[keyVal] && Date.now() < kbPressed[keyVal];
-}
-
-// Row bands: rows 0 & 1 are 3 grid rows tall each, ENTER (row 2) gets the rest
-// row 0 → grid rows 31-33, row 1 → 34-36, row 2 → 37 (1 row, clamped to grid)
+// Map logical keyboard row (0,1,2) → absolute grid row
+// Layout: rows 36-38=counters(3 tall), 39-41=QWER, 42-44=ASDF, 45-47=ENTER (r2=47=ROWS-1 ✓)
 function kbGridRow(logicalRow) {
-    if (logicalRow === 2) return KB_TOP + 1 + 2 * 3; // row 37
-    return KB_TOP + 1 + logicalRow * 3;
+    if (logicalRow === 2) return KB_TOP + 3 + 3 + 2 * 3; // 45
+    return KB_TOP + 3 + 3 + logicalRow * 3;              // 39, 42
 }
 
-function drawKeyboard(g, col) {
-    // ── Colour counters (rows KB_TOP-3 to KB_TOP-1, 4 boxes each 10 cols wide) ──
-    const counterTop = KB_TOP - 2;
+/**
+ * Draw keyboard into renderer.kbGrid / renderer.kbColor.
+ * Draws: cash row (KB_TOP..KB_TOP+2), counters (KB_TOP+3..KB_TOP+5), then keys.
+ */
+function drawKeyboard() {
+    const g   = renderer.kbGrid;
+    const col = renderer.kbColor;
+
+    // Clear keyboard zone
+    for (let r = KB_TOP; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) { g[r][c] = ' '; col[r][c] = null; }
+    }
+
+    // ── Cash row: rows KB_TOP .. KB_TOP+2 (3 rows tall, full width) ──
+    {
+        const r1 = KB_TOP, r2 = KB_TOP + 2;
+        // Border
+        for (let c = 0; c < COLS; c++) { g[r1][c] = '─'; g[r2][c] = '─'; col[r1][c] = '#aaffaa'; col[r2][c] = '#aaffaa'; }
+        for (let r = r1; r <= r2; r++) { g[r][0] = '│'; g[r][COLS-1] = '│'; col[r][0] = '#aaffaa'; col[r][COLS-1] = '#aaffaa'; }
+        g[r1][0] = '┌'; g[r1][COLS-1] = '┐'; g[r2][0] = '└'; g[r2][COLS-1] = '┘';
+        // Cash value centred on middle row
+        const midR = r1 + 1;
+        const multLabel = player.multiplier > 1 ? `  [x${player.multiplier}]` : '';
+        const cashStr = `CASH  $${player.cash.toFixed(2)}${multLabel}`;
+        const startC = Math.floor((COLS - cashStr.length) / 2);
+        cashStr.split('').forEach((ch, i) => {
+            const c = startC + i;
+            if (c > 0 && c < COLS - 1) { g[midR][c] = ch; col[midR][c] = '#aaffaa'; }
+        });
+    }
+
+    // ── Colour counters: rows KB_TOP+3 .. KB_TOP+5 (3 rows tall) ──
+    const counterTop = KB_TOP + 3;
     const COUNTERS = [
-        { val: player.green,  norm: '#22cc22', bright: '#88ff88', c1: 0,  c2: 9  },
-        { val: player.red,    norm: '#cc2222', bright: '#ff8888', c1: 10, c2: 19 },
-        { val: player.blue,   norm: '#2255cc', bright: '#88aaff', c1: 20, c2: 29 },
-        { val: player.yellow, norm: '#ccaa00', bright: '#ffee88', c1: 30, c2: 39 },
+        { key: 'green',  val: player.green,  norm: '#22cc22', bright: '#88ff88', c1: 0,  c2: 9  },
+        { key: 'red',    val: player.red,    norm: '#cc2222', bright: '#ff8888', c1: 10, c2: 19 },
+        { key: 'blue',   val: player.blue,   norm: '#2255cc', bright: '#88aaff', c1: 20, c2: 29 },
+        { key: 'yellow', val: player.yellow, norm: '#ccaa00', bright: '#ffee88', c1: 30, c2: 39 },
     ];
-    COUNTERS.forEach(({ val, norm, bright, c1, c2 }) => {
-        const setC = (r, c, ch, clr) => { if (r >= 0 && r < ROWS && c >= 0 && c < COLS) { g[r][c] = ch; col[r][c] = clr; } };
-        const r1 = counterTop, r2 = counterTop + 2;
-        // Ordered perimeter: top L→R, right T→B, bottom R→L, left B→T
+
+    COUNTERS.forEach(({ key, val, norm, bright, c1, c2 }) => {
+        const locked = !player.unlocked.has(key);
+        const dimNorm = locked ? '#333333' : norm;
+        const dimBright = locked ? '#444444' : bright;
+        const setC = (r, c, ch, clr) => {
+            if (r >= 0 && r < ROWS && c >= 0 && c < COLS) { g[r][c] = ch; col[r][c] = clr; }
+        };
+        const r1 = counterTop, r2 = counterTop + 2; // 3 rows tall
         const perim = [];
         for (let c = c1; c <= c2; c++) perim.push([r1, c]);
         for (let r = r1 + 1; r <= r2; r++) perim.push([r, c2]);
@@ -348,34 +349,40 @@ function drawKeyboard(g, col) {
         const cornerMap = { [`${r1},${c1}`]:'┌', [`${r1},${c2}`]:'┐', [`${r2},${c1}`]:'└', [`${r2},${c2}`]:'┘' };
         const edgeChar = (r, c) => (r === r1 || r === r2) ? '─' : '│';
         const t = ((counterBorderAnim.tick % P) + P) % P;
-        const spinOffset = ((Math.floor(counterBorderAnim.spinAngle) % P) + P) % P;
+        const arcLen = Math.floor(P / 4);
         perim.forEach(([r, c], i) => {
-            const key = `${r},${c}`;
-            const ch  = cornerMap[key] ?? edgeChar(r, c);
-            const arcLen = Math.floor(P / 4);
-            const lit = (((i - t) % P + P) % P) < arcLen;
-            setC(r, c, ch, lit ? bright : norm);
+            const ch  = cornerMap[`${r},${c}`] ?? edgeChar(r, c);
+            const lit = !locked && (((i - t) % P + P) % P) < arcLen;
+            setC(r, c, ch, lit ? dimBright : dimNorm);
         });
-        // Value
+        // Value / lock indicator at middle row
         const midR = r1 + 1;
-        const text = String(val);
+        const text = locked ? '░░░' : String(val);
         const midC = Math.floor((c1 + c2) / 2);
         const start = midC - Math.floor(text.length / 2);
         text.split('').forEach((ch, i) => {
             const c = start + i;
-            if (c > c1 && c < c2) { g[midR][c] = ch; col[midR][c] = norm; }
+            if (c > c1 && c < c2) { g[midR][c] = ch; col[midR][c] = dimNorm; }
         });
     });
 
+    // ── Keys ──────────────────────────────────────────────────────────────────
+    // Map each key to its stock so we can grey out locked ones
+    const KEY_STOCK = { q:'green', w:'red', e:'blue', r:'yellow', a:'green', s:'red', d:'blue', f:'yellow' };
     KB_KEYS.forEach(({ label, row, c1, c2, key, norm, pressed: pressedCol, bg, pbg }) => {
-        const on = isKeyPressed(key);
-        const borderCol = on ? pressedCol : norm;
-        const bgCol     = on ? pbg : bg;
-        const textCol   = on ? pressedCol : norm;
+        const stockKey = KEY_STOCK[key.toLowerCase()];
+        const locked = stockKey && !player.unlocked.has(stockKey);
+        const on = !locked && isKeyPressed(key);
+        const borderCol = locked ? '#2a2a2a' : (on ? pressedCol : norm);
+        const bgCol     = locked ? '#111111' : (on ? pbg : bg);
+        const textCol   = locked ? '#333333' : (on ? pressedCol : norm);
 
         const gr = kbGridRow(row);
         const isEnter = row === 2;
         const r1 = gr, r2 = gr + 2;
+
+        // clamp to grid
+        if (r1 >= ROWS || r2 >= ROWS) return;
 
         // Fill background
         for (let r = r1; r <= r2; r++)
@@ -388,7 +395,7 @@ function drawKeyboard(g, col) {
         for (let c = c1 + 1; c < c2; c++) { setB(r1, c, '─'); setB(r2, c, '─'); }
         for (let r = r1 + 1; r < r2; r++) { setB(r, c1, '│'); setB(r, c2, '│'); }
 
-        // Label centered
+        // Label
         const midC = Math.floor((c1 + c2) / 2);
         const midR = Math.floor((r1 + r2) / 2);
         const lStart = midC - Math.floor(label.length / 2) + (row === 1 ? 1 : 0);
@@ -399,7 +406,7 @@ function drawKeyboard(g, col) {
     });
 }
 
-// Hit-test: given canvas pixel coords, return key or null
+// Hit-test keyboard against the single canvas
 function hitTestKeyboard(canvas, px, py) {
     const cw = canvas.width, ch = canvas.height;
     const charW = cw / COLS, charH = ch / ROWS;
@@ -412,28 +419,43 @@ function hitTestKeyboard(canvas, px, py) {
     }) ?? null;
 }
 
-// Wire canvas click/touch for all three canvases
 function wireCanvasKeyboard(canvas) {
     const fire = (px, py) => {
         const rect = canvas.getBoundingClientRect();
         const scaleX = canvas.width  / rect.width;
         const scaleY = canvas.height / rect.height;
         const hit = hitTestKeyboard(canvas, (px - rect.left) * scaleX, (py - rect.top) * scaleY);
-        if (!hit) return;
-        flashKey(hit.key);
-        if (hit.key === 'Enter') { submitCommand(); return; }
-        document.dispatchEvent(new KeyboardEvent('keydown', { key: hit.key, bubbles: true }));
+        if (!hit) return hit;
+        return hit;
     };
-    canvas.addEventListener('pointerdown', e => { e.preventDefault(); fire(e.clientX, e.clientY); });
+    canvas.addEventListener('pointerdown', e => {
+        e.preventDefault();
+        const hit = fire(e.clientX, e.clientY);
+        if (!hit) return;
+        keysHeld.add(hit.key);
+        if (hit.key === 'Enter') { submitCommand(); return; }
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: hit.key, bubbles: true, repeat: false }));
+    });
+    canvas.addEventListener('pointerup', e => {
+        const hit = fire(e.clientX, e.clientY);
+        if (hit) { keysHeld.delete(hit.key); keysHeld.delete(hit.key.toLowerCase()); }
+    });
+    canvas.addEventListener('pointercancel', e => {
+        const hit = fire(e.clientX, e.clientY);
+        if (hit) { keysHeld.delete(hit.key); keysHeld.delete(hit.key.toLowerCase()); }
+    });
 }
 
+wireCanvasKeyboard(document.getElementById('mainCanvas'));
+
 // ─── BROADWAY LIGHTS ──────────────────────────────────────────────────────────
-const LIGHTS      = { r1: 2, r2: 25, c1: 1, c2: 38 };
+// Content zone is rows 0..KB_TOP-1 = 0..35 (36 rows).
+const LIGHTS = { r1: 1, r2: 32, c1: 1, c2: 38 };
 const RINGS  = [
-    { rect: { r1: 11, r2: 17, c1: 10, c2: 29 }, on: '#33ff33', off: '#002a00' },
-    { rect: { r1:  9, r2: 19, c1:  8, c2: 31 }, on: '#ff3333', off: '#2a0000' },
-    { rect: { r1:  7, r2: 21, c1:  6, c2: 33 }, on: '#3399ff', off: '#00102a' },
-    { rect: { r1:  5, r2: 23, c1:  4, c2: 35 }, on: '#ffee33', off: '#2a2500' },
+    { rect: { r1: 12, r2: 21, c1:  9, c2: 30 }, on: '#33ff33', off: '#002a00' },
+    { rect: { r1:  9, r2: 24, c1:  7, c2: 32 }, on: '#ff3333', off: '#2a0000' },
+    { rect: { r1:  6, r2: 27, c1:  5, c2: 34 }, on: '#3399ff', off: '#00102a' },
+    { rect: { r1:  3, r2: 30, c1:  3, c2: 36 }, on: '#ffee33', off: '#2a2500' },
 ];
 
 function perimeterPositions({ r1, r2, c1, c2 }) {
@@ -446,7 +468,7 @@ function perimeterPositions({ r1, r2, c1, c2 }) {
 }
 
 function paintRing(col, { r1, r2, c1, c2 }, color) {
-    const set = (r, c) => { if (r >= 0 && r < ROWS && c >= 0 && c < COLS) col[r][c] = color; };
+    const set = (r, c) => { if (r >= 0 && r < KB_TOP && c >= 0 && c < COLS) col[r][c] = color; };
     for (let c = c1; c <= c2; c++) { set(r1, c); set(r2, c); }
     for (let r = r1; r <= r2; r++) { set(r, c1); set(r, c2); }
 }
@@ -456,6 +478,7 @@ const lightPositions = lightsPerim.filter((_, i) => i % 3 === 0);
 const N_LIGHTS       = lightPositions.length;
 
 function drawRect(g, { r1, r2, c1, c2 }, ch) {
+    if (r1 >= KB_TOP || r2 >= KB_TOP) return; // stay in content zone
     g[r1][c1] = ch.tl; g[r1][c2] = ch.tr;
     g[r2][c1] = ch.bl; g[r2][c2] = ch.br;
     for (let c = c1 + 1; c < c2; c++) { g[r1][c] = ch.h; g[r2][c] = ch.h; }
@@ -464,43 +487,33 @@ function drawRect(g, { r1, r2, c1, c2 }, ch) {
 
 function buildBroadwayGrid(tick) {
     const g   = makeGrid();
-    const col = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+    const col = makeColorGrid();
 
-    // ── RINGS: independent animation on ringTick ──────────────────────────────
-    // Pattern: 4 cycles of radial grow, then 1 spin rotation (32 frames), repeat.
-    // Radial grow: each cycle = 8 ticks (4 rings × 2 ticks each: on then off)
-    // 4 grow cycles = 32 ticks. 1 spin = 32 ticks. Total pattern = 64 ticks.
+    // ── RINGS ─────────────────────────────────────────────────────────────────
     const RING_CYCLE = 65;
     const rt = ringTick % RING_CYCLE;
-
     if (rt < 32) {
-        // Radial grow phase: 4 cycles × 8 ticks each
-        const growCycle = rt % 8; // 0–7 within each grow cycle
-        // Each ring lights for 2 ticks, innermost first: ring0@0-1, ring1@2-3, ring2@4-5, ring3@6-7
+        const growCycle = rt % 8;
         RINGS.forEach(({ rect, on, off }, i) => {
             const lit = growCycle >= i * 2 && growCycle < i * 2 + 2;
             paintRing(col, rect, lit ? on : off);
         });
     } else {
-        // Spin phase: 32 frames = 1 full rotation, 1/8 arc
         const spinTick = rt - 32;
         RINGS.forEach(({ rect, on, off }) => {
             const pts = perimeterPositions(rect);
             const P = pts.length;
-            // 2 rotations in 33 steps: step size = 2P/32, giving 33 evenly spaced frames
-            // that land exactly back at start on frame 32 (the +1 closing frame)
             const offset = Math.floor(spinTick * 2 * P / 32) % P;
             const arcLen = Math.max(1, Math.floor(P / 3));
             pts.forEach(([r, c], i) => {
+                if (r >= KB_TOP) return;
                 const lit = (((i - offset) % P + P) % P) < arcLen;
-                if (r >= 0 && r < ROWS && c >= 0 && c < COLS) col[r][c] = lit ? on : off;
+                if (r >= 0 && c >= 0 && c < COLS) col[r][c] = lit ? on : off;
             });
         });
     }
 
-    // ── SUPER SELLER 8086 + rotating slides: independent animation on ssTick ──
-    // Each slide: 16 scroll-in, 6 flash, 16 reveal line1 L→R, 6 reveal line2 L→R,
-    //             6 final flash, 4 hold, 16 scroll-out, 4 blank = 74 ticks/slide
+    // ── SUPER SELLER 8086 slides ───────────────────────────────────────────────
     const SLIDES = [
         {
             line1: { str: '* SUPER SELLER *', colors: [
@@ -526,43 +539,33 @@ function buildBroadwayGrid(tick) {
     ];
     const TICKS_PER_SLIDE = 74;
     const SS_CYCLE = TICKS_PER_SLIDE * SLIDES.length;
-    const phase = ssTick % SS_CYCLE;
+    const phase    = ssTick % SS_CYCLE;
     const slideIdx = Math.floor(phase / TICKS_PER_SLIDE);
-    const sp = phase % TICKS_PER_SLIDE; // local phase within this slide
-    const slide = SLIDES[slideIdx];
+    const sp       = phase % TICKS_PER_SLIDE;
+    const slide    = SLIDES[slideIdx];
 
-    const whiteOn = false;
     lightPositions.forEach(([r, c], i) => {
-        const on = whiteOn || ((i - tick + N_LIGHTS) % N_LIGHTS) % 3 === 0;
+        if (r >= KB_TOP) return;
+        const on = ((i - tick + N_LIGHTS) % N_LIGHTS) % 3 === 0;
         g[r][c]   = on ? '█' : '░';
         col[r][c] = on ? '#ffffff' : '#555555';
     });
 
-    const INNER = { r1: 11, r2: 17, c1: 11, c2: 28 };
-    const midR = Math.floor((INNER.r1 + INNER.r2) / 2);
+    const INNER = { r1: 12, r2: 21, c1: 10, c2: 29 };
+    const midR  = Math.floor((INNER.r1 + INNER.r2) / 2);
     const clipC = (c) => c > INNER.c1 && c < INNER.c2;
 
-    // Per-slide scroll/visibility using longest line for scroll width
     const line1 = slide.line1;
     const line2 = slide.line2;
-    const refLen = line1.str.length; // scroll reference width
+    const refLen = line1.str.length;
 
-    // sp layout: 0-15 scroll-in, 16-21 flash, 22-37 reveal line1,
-    //            38-43 reveal line2 (or hold if no line2), 44-49 final flash,
-    //            50-53 hold, 54-69 scroll-out, 70-73 blank
     let scrollOffset = 0, visible = true;
-    if (sp < 16) {
-        scrollOffset = Math.round(sp * refLen / 16) - refLen;
-    } else if (sp < 54) {
-        scrollOffset = 0;
-    } else if (sp < 70) {
-        scrollOffset = sp - 53;
-    } else {
-        visible = false;
-    }
+    if (sp < 16)       { scrollOffset = Math.round(sp * refLen / 16) - refLen; }
+    else if (sp < 54)  { scrollOffset = 0; }
+    else if (sp < 70)  { scrollOffset = sp - 53; }
+    else               { visible = false; }
 
     if (visible) {
-        // ── Draw line 1 ──
         line1.str.split('').forEach((ch, i) => {
             const finalCol = Math.floor((COLS - line1.str.length) / 2);
             const c = finalCol + i + scrollOffset;
@@ -575,12 +578,10 @@ function buildBroadwayGrid(tick) {
             else if (sp < 44)  { lit = true; }
             else if (sp < 50)  { lit = (sp % 2) === 0; }
             else               { lit = true; }
-            // asterisks (index 0 and last) always white
             const isAsterisk = (i === 0 || i === line1.str.length - 1);
             col[midR - 2][c] = lit ? (isAsterisk ? '#ffffff' : (line1.colors[i] ?? '#ffffff')) : '#1a1f3a';
         });
 
-        // ── Draw line 2 (if present) ──
         if (line2.str) {
             line2.str.split('').forEach((ch, i) => {
                 const finalCol = Math.floor((COLS - line2.str.length) / 2);
@@ -598,14 +599,15 @@ function buildBroadwayGrid(tick) {
             });
         }
     }
-    // Row 29 is outside the lights border — plain white, no color entry needed
-    writeCenter(g, 27, 'PRESS ENTER TO CONTINUE');
+
+    // "PRESS ENTER TO CONTINUE" sits in the gap between trim frame and keyboard
+    writeCenter(g, KB_TOP - 1, 'PRESS ENTER TO CONTINUE');
 
     RINGS.forEach(({ rect }) =>
         drawRect(g, rect, { h: '─', v: '│', tl: '┌', tr: '┐', bl: '└', br: '┘' })
     );
 
-    // White border: Broadway-style bulbs — every 2nd perimeter cell is a bulb
+    // Broadway bulbs
     {
         const { r1, r2, c1, c2 } = LIGHTS;
         const perim = [];
@@ -613,23 +615,23 @@ function buildBroadwayGrid(tick) {
         for (let r = r1 + 1; r <= r2; r++) perim.push([r, c2]);
         for (let c = c2 - 1; c >= c1; c--) perim.push([r2, c]);
         for (let r = r2 - 1; r > r1; r--) perim.push([r, c1]);
-
         perim.forEach(([r, c], i) => {
+            if (r >= KB_TOP) return;
             const on = ((i - tick + perim.length) % perim.length) % 4 === 0;
             g[r][c]   = on ? '●' : '○';
             col[r][c] = on ? '#ffffff' : '#444444';
         });
     }
 
-    // Static white trim — one frame inside the bulb ring (smaller), one outside (larger)
+    // Static trim frames
     {
         const trimFrames = [
-            { r1: 3, r2: 24, c1: 2, c2: 37 },  // smaller: inside the flashing lights
-            { r1: 1, r2: 26, c1: 0, c2: 39 },  // larger: outside the flashing lights
+            { r1: 2, r2: 31, c1: 2, c2: 37 },
+            { r1: 0, r2: 33, c1: 0, c2: 39 },
         ];
         trimFrames.forEach(({ r1, r2, c1, c2 }) => {
             const setTrim = (r, c, ch) => {
-                if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return;
+                if (r < 0 || r >= KB_TOP || c < 0 || c >= COLS) return;
                 g[r][c]   = ch;
                 col[r][c] = '#cccccc';
             };
@@ -640,294 +642,788 @@ function buildBroadwayGrid(tick) {
         });
     }
 
-    drawKeyboard(g, col);
     return { g, col };
 }
 
-// ─── STATIC INTRO SCREENS ─────────────────────────────────────────────────────
-function buildScreen2() {
-    const g = makeGrid();
-    const col = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
-    writeCenter(g, 2,  'WELCOME TO');
-    writeCenter(g, 4,  'STOCK TRADING');
-    writeCenter(g, 7,  '! WARNING !');
-    writeCenter(g, 9,  '30 SECONDS PER ROUND');
-    writeCenter(g, 11, 'Unsold stocks EXPIRE');
-    writeCenter(g, 12, 'and become WORTHLESS');
-    writeCenter(g, 14, 'Buy & sell quickly to');
-    writeCenter(g, 15, 'maximize your profits!');
-    writeCenter(g, 27, 'PRESS ENTER TO CONTINUE');
-    drawKeyboard(g, col);
-    return g;
-}
+// ─── SCROLL ANIMATION (content zone only: rows 0..KB_TOP-1) ──────────────────
+/**
+ * Animate a scroll-down transition only within the content zone.
+ * fromGrid and toGrid are full ROWS-tall grids, but we only scroll rows 0..KB_TOP-1.
+ * The keyboard zone stays untouched.
+ */
+function animateScrollDown(fromGrid, toGrid, fromColors = null, toColors = null, tickMs = 40) {
+    // Work only on the content-zone slice
+    const current     = fromGrid.slice(0, KB_TOP).map(r => [...r]);
+    const currentCol  = fromColors
+        ? fromColors.slice(0, KB_TOP).map(r => [...r])
+        : Array.from({ length: KB_TOP }, () => Array(COLS).fill(null));
+    const target      = toGrid.slice(0, KB_TOP);
+    const targetCol   = toColors
+        ? toColors.slice(0, KB_TOP)
+        : Array.from({ length: KB_TOP }, () => Array(COLS).fill(null));
 
-function buildScreen3() {
-    const g = makeGrid();
-    const col = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
-    writeCenter(g, 3,  'HOW TO PLAY');
-    writeCenter(g, 6,  'Q  =  BUY');
-    writeCenter(g, 8,  'A  =  SELL');
-    writeCenter(g, 11, 'Watch the price chart');
-    writeCenter(g, 12, 'and trade wisely.');
-    writeCenter(g, 15, 'Type a quantity then');
-    writeCenter(g, 16, 'press ENTER to confirm.');
-    writeCenter(g, 27, 'PRESS ENTER TO CONTINUE');
-    drawKeyboard(g, col);
-    return g;
-}
-
-// ─── SCROLL ANIMATION ─────────────────────────────────────────────────────────
-function animateScrollDown(fromGrid, toGrid, renderer, tickMs = 40) {
-    const current = fromGrid.map(r => [...r]);
     return new Promise(resolve => {
         let tick = 0;
         const interval = setInterval(() => {
             for (let c = 0; c < COLS; c++) {
-                for (let r = ROWS - 1; r > 0; r--) current[r][c] = current[r - 1][c];
-                current[0][c] = toGrid[ROWS - 1 - tick][c];
+                for (let r = KB_TOP - 1; r > 0; r--) {
+                    current[r][c]    = current[r - 1][c];
+                    currentCol[r][c] = currentCol[r - 1][c];
+                }
+                current[0][c]    = target[KB_TOP - 1 - tick]?.[c] ?? ' ';
+                currentCol[0][c] = targetCol[KB_TOP - 1 - tick]?.[c] ?? null;
             }
-            renderer.render(current);
+            const fullGrid  = [...current,    ...Array.from({ length: ROWS - KB_TOP }, () => Array(COLS).fill(' '))];
+            const fullColor = [...currentCol, ...Array.from({ length: ROWS - KB_TOP }, () => Array(COLS).fill(null))];
+            renderer.render(fullGrid, fullColor, false);
             tick++;
-            if (tick >= ROWS) { clearInterval(interval); resolve(); }
+            if (tick >= KB_TOP) { clearInterval(interval); resolve(); }
         }, tickMs);
     });
 }
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
-let currentScreen   = 0;
-let waitingForEnter = false;
-let gameActive      = false;
-let lastIntroGrid   = makeGrid();
+let transitioning = false;
+let gameActive       = false;
+let waitingForResults = false;
+let lastIntroGrid    = makeGrid();
+let lastIntroColors  = makeColorGrid();
 let broadwayInterval = null;
 let broadwayTick    = 0;
-let ssTick          = 0;   // drives SUPER SELLER 8086 animation independently
-let ringTick        = 0;   // drives RINGS animation independently
+let ssTick          = 0;
+let ringTick        = 0;
 
-const stock  = { price: 45, volatility: 0.15, history: [45] };
-const player = { cash: 1000, shares: 0, startingCash: 1000, green: 0, red: 0, blue: 0, yellow: 0 };
-let roundTime = 30, roundInterval = null, currentMode = null;
+const STOCKS = {
+    green:  { price: 45, history: [45], volatility: 0.12 },
+    red:    { price: 45, history: [45], volatility: 0.12 },
+    blue:   { price: 45, history: [45], volatility: 0.12 },
+    yellow: { price: 45, history: [45], volatility: 0.12 },
+};
+// Keep a single `stock` alias for legacy references (endRound results etc)
+const stock = STOCKS.green;
+const UNLOCK_COSTS = { red: 100, blue: 1000, yellow: 10000 };
+const MULTIPLIER_COSTS = { 10: 500, 100: 5000, 1000: 50000 };
+const MULTIPLIER_ORDER = [1, 10, 100, 1000];
+const player = { cash: 100, startingCash: 100, green: 0, red: 0, blue: 0, yellow: 0, unlocked: new Set(['green']), multiplier: 1 };
+let roundTime = 30, roundInterval = null;
+let scanCol = 0, scanFrame = 0;
+const buyImpacts = []; // { row, col, hex, frames }
+
+// Chart geometry constants (match buildGameGrid layout)
+const CHART_TOP    = 2;
+const CHART_SEP_R  = KB_TOP - 3 - 1; // sepR0 = 29
+const CHART_H      = CHART_SEP_R - CHART_TOP; // 27
+const CHART_GMIN   = 10, CHART_GMAX = 90, CHART_GRANGE = 80;
+const chartRowOf   = p => CHART_TOP + Math.round(((CHART_GMAX - p) / CHART_GRANGE) * (CHART_H - 1));
 
 // ─── COUNTER BORDER ANIMATION ─────────────────────────────────────────────────
-// Arc: quarter of the perimeter lit, rotating continuously.
 const counterBorderAnim = { tick: 0 };
 setInterval(() => {
+    if (transitioning) return;
     counterBorderAnim.tick++;
-    if (typeof gameActive !== 'undefined' && gameActive) updateGameDisplay();
+    drawKeyboard();
+    if (typeof gameActive !== 'undefined' && gameActive) {
+        scanFrame++;
+        if (scanFrame % 4 === 0) {
+            scanCol++;
+            if (scanCol >= COLS) {
+                scanCol = COLS - 1;
+                endRound();
+                return;
+            }
+        }
+        updateGameDisplay();
+    } else {
+        renderer.renderKeyboardOnly();
+    }
 }, 80);
 
 // ─── INTRO FLOW ───────────────────────────────────────────────────────────────
 async function showIntroScreen() {
-    if (currentScreen === 0) {
-        const { g: firstG } = buildBroadwayGrid(0);
-        await animateScrollDown(lastIntroGrid, firstG, introRenderer);
-        lastIntroGrid = firstG;
-        broadwayTick  = 0;
-        ssTick        = 0;
-        ringTick      = 0;
-        broadwayInterval = setInterval(() => {
-            broadwayTick++; ssTick++; ringTick++;
-            const { g, col } = buildBroadwayGrid(broadwayTick);
-            introRenderer.render(g, col);
-        }, 120);
-        waitingForEnter = true;
-        currentScreen++;
+    // Scroll in the broadway screen then wait for Enter
+    const { g: firstG, col: firstCol } = buildBroadwayGrid(0);
+    drawKeyboard();
+    transitioning = true;
+    await animateScrollDown(lastIntroGrid, firstG, lastIntroColors, firstCol);
+    transitioning = false;
+    lastIntroGrid   = firstG;
+    lastIntroColors = firstCol;
+    broadwayTick = ssTick = ringTick = 0;
 
-    } else if (currentScreen === 1) {
-        clearInterval(broadwayInterval);
-        const { g: fromG } = buildBroadwayGrid(broadwayTick);
-        const nextGrid = buildScreen2();
-        await animateScrollDown(fromG, nextGrid, introRenderer);
-        lastIntroGrid = nextGrid;
-        waitingForEnter = true;
-        currentScreen++;
+    broadwayInterval = setInterval(() => {
+        if (transitioning) return;
+        broadwayTick++; ssTick++; ringTick++;
+        const { g, col } = buildBroadwayGrid(broadwayTick);
+        lastIntroGrid   = g;
+        lastIntroColors = col;
+        const fullGrid  = [...g.slice(0, KB_TOP), ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(' '))];
+        const fullColor = [...col.slice(0, KB_TOP), ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(null))];
+        renderer.render(fullGrid, fullColor, false);
+    }, 120);
 
-    } else if (currentScreen === 2) {
-        const nextGrid = buildScreen3();
-        await animateScrollDown(lastIntroGrid, nextGrid, introRenderer);
-        lastIntroGrid = nextGrid;
-        waitingForEnter = true;
-        currentScreen++;
-
-    } else {
-        startGameplay();
-    }
+    waitingForEnter = true;
 }
 
-function startGameplay() {
-    document.getElementById('introScreen').classList.add('hidden');
-    document.getElementById('gameScreen').classList.remove('hidden');
+async function startGameplay() {
+    const { g: gameG, col: gameCol } = buildGameGrid();
+    await animateScrollDown(lastIntroGrid, gameG, lastIntroColors, gameCol);
+    transitioning = false;
     gameActive = true;
     startRound();
 }
 
 // ─── GAME GRID BUILDER ────────────────────────────────────────────────────────
 function buildGameGrid() {
-    const g = makeGrid();
-    const col = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
-    writeStr(g, 0, 0,  `RED $${stock.price.toFixed(2)}`);
-    writeStr(g, 0, 30, `${roundTime}s`);
-    fillRow(g, 1, '─');
+    const g   = makeGrid();
+    const col = makeColorGrid();
 
-    const chartTop = 3, chartH = 10;
-    const hist = stock.history.slice(-(COLS - 2));
-    const maxP = Math.max(...hist), minP = Math.min(...hist), range = maxP - minP || 1;
-    for (let c = 0; c < hist.length; c++) {
-        const bar = Math.round(((hist[c] - minP) / range) * (chartH - 1));
-        for (let r = 0; r < chartH; r++)
-            g[chartTop + chartH - 1 - r][c + 1] = r <= bar ? '·' : ' ';
+    const COLORS = [
+        { key: 'green',  hex: '#22cc22', label: 'GRN' },
+        { key: 'red',    hex: '#cc2222', label: 'RED' },
+        { key: 'blue',   hex: '#2255cc', label: 'BLU' },
+        { key: 'yellow', hex: '#ccaa00', label: 'YLW' },
+    ].filter(({ key }) => player.unlocked.has(key));
+    const colW = Math.floor(COLS / Math.max(COLORS.length, 1)); // e.g. 40, 20, 13, 10
+
+    // ── Bottom layout (anchored to KB_TOP) ──
+    // Rows 33–35: total balance box (3 tall, full width)
+    // Row 32:     separator
+    // Rows 29–31: 4 colour boxes (3 tall, quarter width each)
+    // Row 28:     separator
+
+    // Colour price boxes sit flush at the bottom of the content zone
+    const colR1   = KB_TOP - 3; // 30
+    const colR2   = KB_TOP - 1; // 32
+    const sepR0   = colR1 - 1;  // 29
+
+    const drawBox = (r1, r2, c1, c2, color) => {
+        for (let c = c1; c <= c2; c++) { g[r1][c] = '─'; g[r2][c] = '─'; col[r1][c] = color; col[r2][c] = color; }
+        for (let r = r1; r <= r2; r++) { g[r][c1] = '│'; g[r][c2] = '│'; col[r][c1] = color; col[r][c2] = color; }
+        g[r1][c1] = '┌'; g[r1][c2] = '┐'; g[r2][c1] = '└'; g[r2][c2] = '┘';
+    };
+
+    // 4 colour boxes sit flush against KB_TOP
+    COLORS.forEach(({ key, hex, label }, i) => {
+        const c1 = i * colW, c2 = c1 + colW - 1;
+        drawBox(colR1, colR2, c1, c2, hex);
+        const shares = player[key];
+        const price  = priceAtTick(key, Math.round(scanCol / (COLS - 1) * ROUND_TICKS)).toFixed(2);
+        const line   = `$${price}`;
+        const lc     = c1 + Math.floor((colW - line.length) / 2);
+        const midR   = Math.floor((colR1 + colR2) / 2);
+        // clamp writes within box interior
+        line.split('').forEach((ch, j) => {
+            const col_ = lc + j;
+            if (col_ > c1 && col_ < c2) { g[midR][col_] = ch; col[midR][col_] = hex; }
+        });
+        if (i > 0) { g[colR1][c1] = '┬'; g[colR2][c1] = '┴'; }
+    });
+
+    // separator above colour boxes
+    fillRow(g, sepR0, '─');
+    for (let c = 0; c < COLS; c++) col[sepR0][c] = '#444444';
+
+    // ── Top: separator only (no horizontal progress bar) ──
+    fillRow(g, 0, '─');
+    for (let c = 0; c < COLS; c++) col[0][c] = '#444444';
+
+    fillRow(g, 1, '─');
+    for (let c = 0; c < COLS; c++) col[1][c] = '#444444';
+
+    // ── Chart fills rows 2 .. sepR0-1 ──
+    const chartTop = 2;
+    const chartH   = sepR0 - chartTop;
+
+    // Fixed display range matching the price bounds used in simulateAllPrices
+    const globalMin = 10, globalMax = 90, globalRange = 80;
+
+    // Remove the clamp mutation — prices are already well-formed from simulateAllPrices
+
+    const plotWave = (hist, hex) => {
+        const toRow = p => chartTop + Math.round(((globalMax - p) / globalRange) * (chartH - 1));
+        // Sample history across exactly COLS columns so the wave always fills the full width
+        const rows = Array.from({ length: COLS }, (_, c) => {
+            const t   = (hist.length - 1) * (c / (COLS - 1));
+            const lo  = Math.floor(t), hi = Math.min(lo + 1, hist.length - 1);
+            const val = hist[lo] + (hist[hi] - hist[lo]) * (t - lo);
+            return toRow(val);
+        });
+        for (let c = 0; c < COLS; c++) {
+            const r    = rows[c];
+            const prev = c > 0 ? rows[c - 1] : r;
+            const next = c < COLS - 1 ? rows[c + 1] : r;
+            const dy   = next - prev;
+            const ch   = dy < -1 ? '/' : dy > 1 ? '\\' : dy === 0 ? '─' : dy < 0 ? '/' : '\\';
+            if (r >= chartTop && r < chartTop + chartH) { g[r][c] = ch; col[r][c] = hex; }
+            if (c > 0) {
+                const r0 = rows[c - 1], r1 = rows[c];
+                const lo = Math.min(r0, r1) + 1, hi = Math.max(r0, r1) - 1;
+                for (let fr = lo; fr <= hi; fr++) {
+                    if (fr >= chartTop && fr < chartTop + chartH) { g[fr][c] = '│'; col[fr][c] = hex; }
+                }
+            }
+        }
+    };
+
+    const allPrices = Object.values(STOCKS).flatMap(s => s.history);
+
+    if (allPrices.length > 4) {
+        // Draw in z-order: yellow first (background), then blue, red, green on top
+        if (player.unlocked.has('yellow')) plotWave(STOCKS.yellow.history, '#ccaa00');
+        if (player.unlocked.has('blue'))   plotWave(STOCKS.blue.history,   '#2255cc');
+        if (player.unlocked.has('red'))    plotWave(STOCKS.red.history,    '#cc2222');
+        if (player.unlocked.has('green'))  plotWave(STOCKS.green.history,  '#22cc22');
+    } else {
+        // Decorative static preview — one wave per colour in its quadrant
+        const amp  = Math.floor(chartH / 2) - 1;
+        const midR = chartTop + Math.floor(chartH / 2);
+        const waves = [
+            { hex: '#22cc22', fn: (c) => Math.sin((c / COLS) * Math.PI * 4) },
+            { hex: '#cc2222', fn: (c) => ((c / COLS * 4) % 1) * 2 - 1 },
+            { hex: '#2255cc', fn: (c) => (Math.floor(c / COLS * 8) % 2) * 2 - 1 },
+            { hex: '#ccaa00', fn: (c) => (c / COLS) * 2 - 1 },
+        ];
+        waves.forEach(({ hex, fn }) => {
+            for (let c = 0; c < COLS; c++) {
+                const r    = midR + Math.round(amp * fn(c));
+                const next = midR + Math.round(amp * fn(c + 1));
+                const dy   = next - r;
+                const ch   = dy < 0 ? '/' : dy > 0 ? '\\' : '─';
+                if (r >= chartTop && r < chartTop + chartH) { g[r][c] = ch; col[r][c] = hex; }
+            }
+        });
     }
 
-    fillRow(g, 16, '─');
-    if (currentMode) writeStr(g, 18, 0, currentMode === 'buy' ? 'BUY MODE' : 'SELL MODE');
-    writeStr(g, 20, 0, `Cash: $${player.cash.toFixed(2)}`);
-    writeStr(g, 21, 0, `Shares: ${player.shares}`);
-    writeStr(g, 22, 0, `Value: $${(player.shares * stock.price).toFixed(2)}`);
-    drawKeyboard(g, col);
+    // ── Vertical scanning bar: sweeps left→right across the chart ──
+    if (allPrices.length > 4) {
+        const barTop    = 0;
+        const barBottom = sepR0 - 1;
+
+        // 1-wide solid white bar
+        for (let r = barTop; r <= barBottom; r++) {
+            g[r][scanCol]   = '│';
+            col[r][scanCol] = '#ffffff';
+        }
+
+        // Coloured dots where the bar intersects each stock line
+        const toRow = p => chartTop + Math.round(((globalMax - p) / globalRange) * (chartH - 1));
+        const dots = [
+            { key: 'yellow', hist: STOCKS.yellow.history, hex: '#ffee88' },
+            { key: 'blue',   hist: STOCKS.blue.history,   hex: '#88aaff' },
+            { key: 'red',    hist: STOCKS.red.history,    hex: '#ff8888' },
+            { key: 'green',  hist: STOCKS.green.history,  hex: '#88ff88' },
+        ].filter(({ key }) => player.unlocked.has(key));
+        dots.forEach(({ hist, hex }) => {
+            const t   = (hist.length - 1) * (scanCol / (COLS - 1));
+            const lo  = Math.floor(t), hi = Math.min(lo + 1, hist.length - 1);
+            const val = hist[lo] + (hist[hi] - hist[lo]) * (t - lo);
+            const r   = toRow(val);
+            if (r >= chartTop && r < chartTop + chartH) {
+                g[r][scanCol]   = '●';
+                col[r][scanCol] = hex;
+            }
+        });
+
+        // ── Buy/sell impact: dramatic radiating burst ──
+        for (let i = buyImpacts.length - 1; i >= 0; i--) {
+            const imp = buyImpacts[i];
+            imp.frames--;
+            if (imp.frames <= 0) { buyImpacts.splice(i, 1); continue; }
+
+            const f = imp.frames; // 5 down to 1
+            const brightHex = imp.hex;
+            const dimHex = imp.hex + '99';
+
+            // Frame 5: massive explosion — 5-wide, 5-tall cross + diagonals
+            // Frame 4: shrinks to 3-wide cross + diagonals
+            // Frame 3: tight cross
+            // Frame 2: just centre + 4 orthogonals
+            // Frame 1: centre only, dimmed
+
+            const set = (r, c, ch, color) => {
+                if (r >= chartTop && r < chartTop + chartH && c >= 0 && c < COLS)
+                    { g[r][c] = ch; col[r][c] = color; }
+            };
+
+            const { row: dr } = imp;
+            const dc = scanCol;
+
+            if (f >= 5) {
+                // Outermost ring
+                set(dr - 4, dc,     '|',  dimHex);
+                set(dr + 4, dc,     '|',  dimHex);
+                set(dr,     dc - 3, '─',  dimHex);
+                set(dr,     dc + 3, '─',  dimHex);
+                set(dr - 3, dc - 2, '\\', dimHex);
+                set(dr - 3, dc + 2, '/', dimHex);
+                set(dr + 3, dc - 2, '/', dimHex);
+                set(dr + 3, dc + 2, '\\', dimHex);
+            }
+            if (f >= 4) {
+                set(dr - 3, dc,     '↑',  brightHex);
+                set(dr + 3, dc,     '↓',  brightHex);
+                set(dr,     dc - 2, '←',  brightHex);
+                set(dr,     dc + 2, '→',  brightHex);
+                set(dr - 2, dc - 1, '◤',  brightHex);
+                set(dr - 2, dc + 1, '◥',  brightHex);
+                set(dr + 2, dc - 1, '◣',  brightHex);
+                set(dr + 2, dc + 1, '◢',  brightHex);
+            }
+            if (f >= 3) {
+                set(dr - 2, dc,     '▲',  brightHex);
+                set(dr + 2, dc,     '▼',  brightHex);
+                set(dr - 1, dc - 1, '*',  brightHex);
+                set(dr - 1, dc + 1, '*',  brightHex);
+                set(dr + 1, dc - 1, '*',  brightHex);
+                set(dr + 1, dc + 1, '*',  brightHex);
+            }
+            if (f >= 2) {
+                set(dr - 1, dc,     imp.isBuy ? '▲' : '▼', brightHex);
+                set(dr + 1, dc,     imp.isBuy ? '▼' : '▲', brightHex);
+                set(dr,     dc - 1, '█',  brightHex);
+                set(dr,     dc + 1, '█',  brightHex);
+            }
+            // Centre: always a bright star
+            set(dr, dc, '✦', brightHex);
+        }
+    }
+
     return { g, col };
 }
 
 const updateGameDisplay = () => {
+    drawKeyboard(); // refresh KB zone (counters, key presses)
     const { g, col } = buildGameGrid();
-    gameRenderer.render(g, col, true);
+    // Pad to full ROWS (renderer uses kbGrid for the bottom zone anyway)
+    const fullGrid  = [...g.slice(0, KB_TOP), ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(' '))];
+    const fullColor = [...col.slice(0, KB_TOP), ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(null))];
+    renderer.render(fullGrid, fullColor, true);
 };
 
 // ─── STOCK / ROUND LOGIC ──────────────────────────────────────────────────────
-function updateStockPrice() {
-    stock.price = parseFloat(
-        Math.max(1, stock.price * (1 + (Math.random() - 0.5) * stock.volatility)).toFixed(2)
-    );
-    stock.history.push(stock.price);
-    updateGameDisplay();
+const ROUND_TICKS = 30;
+
+function simulateAllPrices() {
+    // Each stock is hand-shaped with 2 interesting moments and uses the full vertical range.
+    // History has ROUND_TICKS+1 entries (index 0 = start, index 30 = end).
+
+    const n = ROUND_TICKS + 1;
+
+    // Helper: interpolate a set of keyframes into n evenly-spaced values
+    // keyframes = [{t: 0..1, v: 0..1}, ...], returns array of n values in [0,1]
+    function buildCurve(keyframes) {
+        const out = [];
+        for (let i = 0; i < n; i++) {
+            const t = i / (n - 1);
+            // find surrounding keyframes
+            let lo = keyframes[0], hi = keyframes[keyframes.length - 1];
+            for (let k = 0; k < keyframes.length - 1; k++) {
+                if (t >= keyframes[k].t && t <= keyframes[k + 1].t) {
+                    lo = keyframes[k]; hi = keyframes[k + 1]; break;
+                }
+            }
+            const span = hi.t - lo.t || 1;
+            const frac = (t - lo.t) / span;
+            // smooth step between keyframes
+            const s = frac * frac * (3 - 2 * frac);
+            out.push(lo.v + (hi.v - lo.v) * s);
+        }
+        return out;
+    }
+
+    function toPrices(curve, minP, maxP) {
+        return curve.map(v => parseFloat((minP + v * (maxP - minP)).toFixed(2)));
+    }
+
+    // GREEN: starts mid, drops to bottom (interesting drop), then climbs sharply to top
+    const greenCurve = buildCurve([
+        { t: 0,    v: 0.5 },
+        { t: 0.35, v: 0.05 },   // ← moment 1: bottom
+        { t: 0.36, v: 0.05 },
+        { t: 1.0,  v: 0.95 },   // ← moment 2: sharp recovery to top
+    ]);
+    STOCKS.green.history  = toPrices(greenCurve, 10, 90);
+    STOCKS.green.price    = STOCKS.green.history[STOCKS.green.history.length - 1];
+
+    // RED: climbs steadily to top, then sharp crash to bottom, small bounce at end
+    const redCurve = buildCurve([
+        { t: 0,    v: 0.1  },
+        { t: 0.55, v: 0.95 },   // ← moment 1: peak
+        { t: 0.56, v: 0.95 },
+        { t: 0.75, v: 0.05 },   // ← moment 2: crash
+        { t: 1.0,  v: 0.25 },
+    ]);
+    STOCKS.red.history  = toPrices(redCurve, 10, 90);
+    STOCKS.red.price    = STOCKS.red.history[STOCKS.red.history.length - 1];
+
+    // BLUE: flat near bottom, sudden spike to top midway, then flat near top
+    const blueCurve = buildCurve([
+        { t: 0,    v: 0.05 },
+        { t: 0.39, v: 0.08 },   // ← moment 1: flat low end
+        { t: 0.4,  v: 0.08 },
+        { t: 0.6,  v: 0.92 },   // ← moment 2: explosive spike
+        { t: 0.61, v: 0.92 },
+        { t: 1.0,  v: 0.90 },
+    ]);
+    STOCKS.blue.history  = toPrices(blueCurve, 10, 90);
+    STOCKS.blue.price    = STOCKS.blue.history[STOCKS.blue.history.length - 1];
+
+    // YELLOW: smooth sine-like arc — rises to top early, dips to bottom mid, recovers slightly
+    const yellowCurve = buildCurve([
+        { t: 0,    v: 0.3  },
+        { t: 0.25, v: 0.95 },   // ← moment 1: early peak
+        { t: 0.26, v: 0.95 },
+        { t: 0.7,  v: 0.05 },   // ← moment 2: valley
+        { t: 1.0,  v: 0.45 },
+    ]);
+    STOCKS.yellow.history  = toPrices(yellowCurve, 10, 90);
+    STOCKS.yellow.price    = STOCKS.yellow.history[STOCKS.yellow.history.length - 1];
+}
+
+function priceAtTick(key, tick) {
+    const idx = Math.min(tick, STOCKS[key].history.length - 1);
+    return STOCKS[key].history[idx];
 }
 
 function startRound() {
-    roundTime = 30; stock.history = [stock.price]; currentMode = null;
+    scanCol = 0;
+    scanFrame = 0;
+    simulateAllPrices();
     updateGameDisplay();
-    if (roundInterval) clearInterval(roundInterval);
-    roundInterval = setInterval(() => {
-        roundTime--; updateGameDisplay();
-        if (roundTime <= 0) endRound();
-    }, 1000);
+}
+
+// ─── UPGRADE SCREEN ───────────────────────────────────────────────────────────
+let waitingForUpgrade = false;
+
+function buildUpgradeGrid() {
+    const g   = makeGrid();
+    const col = makeColorGrid();
+
+    writeCenter(g, 1, 'UPGRADES');
+    for (let c = 0; c < COLS; c++) col[1][c] = '#ffffff';
+
+    fillRow(g, 2, '─');
+    for (let c = 0; c < COLS; c++) col[2][c] = '#444444';
+
+    // Determine next unlockable stock and its cost (needed for Q button state)
+    const upgradeOrder = ['red', 'blue', 'yellow'];
+    const nextUnlock = upgradeOrder.find(key => !player.unlocked.has(key));
+    const nextCost = nextUnlock ? UNLOCK_COSTS[nextUnlock] : null;
+    const canAfford = nextCost !== null && player.cash >= nextCost;
+
+    const drawBox = (r1, r2, c1, c2, borderCol, bgCol) => {
+        for (let r = r1; r <= r2; r++)
+            for (let c = c1; c <= c2; c++) { g[r][c] = ' '; col[r][c] = bgCol; }
+        g[r1][c1]='┌'; g[r1][c2]='┐'; g[r2][c1]='└'; g[r2][c2]='┘';
+        for (let c=c1+1;c<c2;c++){g[r1][c]='─';g[r2][c]='─';col[r1][c]=borderCol;col[r2][c]=borderCol;}
+        for (let r=r1+1;r<r2;r++){g[r][c1]='│';g[r][c2]='│';col[r][c1]=borderCol;col[r][c2]=borderCol;}
+        col[r1][c1]=borderCol; col[r1][c2]=borderCol; col[r2][c1]=borderCol; col[r2][c2]=borderCol;
+    };
+
+    const writeCol = (r, c1, c2, str, clr) => {
+        const start = c1 + Math.floor((c2 - c1 - str.length) / 2) + 1;
+        str.split('').forEach((ch, j) => {
+            const cc = start + j;
+            if (cc > c1 && cc < c2) { g[r][cc] = ch; col[r][cc] = clr; }
+        });
+    };
+
+    const multUnlocked = player.unlocked.has('red');
+
+    // ── ROW 1: Stock unlocks ──
+    writeCenter(g, 4, '── NEW STOCKS ──');
+    for (let c = 0; c < COLS; c++) col[4][c] = '#555555';
+
+    const stockBoxR1 = 5, stockBoxR2 = 10;
+    const STOCK_COLS = [
+        { c1: 0,  c2: 8  },
+        { c1: 9,  c2: 19 },
+        { c1: 20, c2: 29 },
+        { c1: 30, c2: 39 },
+    ];
+    const UPGRADE_LIST = [
+        { key: 'red',    bright: '#ff8888', label: 'RED',    costLabel: '$100'  },
+        { key: 'blue',   bright: '#88aaff', label: 'BLUE',   costLabel: '$1K'   },
+        { key: 'yellow', bright: '#ffee88', label: 'YELLOW', costLabel: '$10K'  },
+    ];
+    const stockMidR = Math.floor((stockBoxR1 + stockBoxR2) / 2);
+
+    // Q-BUY button
+    const qFlashing  = keysHeld.has('q') || keysHeld.has('Q');
+    const qAvailable = canAfford;
+    const qBorder = qFlashing && qAvailable ? '#88ff88' : qAvailable ? '#22cc22' : '#333333';
+    const qBg     = qFlashing && qAvailable ? '#003a00' : qAvailable ? '#001800' : '#111111';
+    drawBox(stockBoxR1, stockBoxR2, STOCK_COLS[0].c1, STOCK_COLS[0].c2, qBorder, qBg);
+    writeCol(stockMidR - 1, STOCK_COLS[0].c1, STOCK_COLS[0].c2, 'Q', qAvailable ? qBorder : '#333333');
+    writeCol(stockMidR,     STOCK_COLS[0].c1, STOCK_COLS[0].c2, 'BUY', qAvailable ? qBorder : '#333333');
+
+    // Stock unlock boxes
+    UPGRADE_LIST.forEach(({ key, bright, label, costLabel }, i) => {
+        const { c1, c2 } = STOCK_COLS[i + 1];
+        const owned = player.unlocked.has(key);
+        const cost = UNLOCK_COSTS[key];
+        const affordable = player.cash >= cost;
+        const borderCol = owned ? bright : affordable ? '#555555' : '#333333';
+        drawBox(stockBoxR1, stockBoxR2, c1, c2, borderCol, '#0a0a0a');
+        if (owned) {
+            writeCol(stockMidR - 1, c1, c2, '★', bright);
+            writeCol(stockMidR,     c1, c2, label, bright);
+            writeCol(stockMidR + 1, c1, c2, 'UNLOCKED', bright);
+        } else {
+            writeCol(stockMidR - 1, c1, c2, label, affordable ? '#888888' : '#444444');
+            writeCol(stockMidR,     c1, c2, costLabel, affordable ? '#aaaaaa' : '#555555');
+            writeCol(stockMidR + 1, c1, c2, 'LOCKED', '#2a2a2a');
+        }
+    });
+
+    // ── ROW 2: Multiplier upgrades (unlocked when red is unlocked) ──
+    if (multUnlocked) {
+        const multBoxR1 = 13, multBoxR2 = 18;
+        const multMidR  = Math.floor((multBoxR1 + multBoxR2) / 2);
+
+        writeCenter(g, multBoxR1 - 1, '── BUY/SELL MULTIPLIER ──');
+        for (let c = 0; c < COLS; c++) col[multBoxR1 - 1][c] = '#555555';
+
+        const MULT_COLS = [
+            { c1: 0,  c2: 7  },
+            { c1: 8,  c2: 17 },
+            { c1: 18, c2: 27 },
+            { c1: 28, c2: 39 },
+        ];
+        const MULT_LIST = [
+            { mult: 10,   costLabel: '$500'  },
+            { mult: 100,  costLabel: '$5K'   },
+            { mult: 1000, costLabel: '$50K'  },
+        ];
+
+        const curIdx     = MULTIPLIER_ORDER.indexOf(player.multiplier);
+        const nextMult   = MULTIPLIER_ORDER[curIdx + 1] || null;
+        const nextCostW  = nextMult ? MULTIPLIER_COSTS[nextMult] : null;
+        const wCanAfford = nextCostW !== null && player.cash >= nextCostW;
+
+        const wFlashing = keysHeld.has('w') || keysHeld.has('W');
+        const wBorder = wFlashing && wCanAfford ? '#ff8888' : wCanAfford ? '#cc2222' : '#333333';
+        const wBg     = wFlashing && wCanAfford ? '#3a0000' : wCanAfford ? '#180000' : '#111111';
+        drawBox(multBoxR1, multBoxR2, MULT_COLS[0].c1, MULT_COLS[0].c2, wBorder, wBg);
+        writeCol(multMidR - 1, MULT_COLS[0].c1, MULT_COLS[0].c2, 'W', wCanAfford ? wBorder : '#333333');
+        writeCol(multMidR,     MULT_COLS[0].c1, MULT_COLS[0].c2, 'BUY', wCanAfford ? wBorder : '#333333');
+
+        MULT_LIST.forEach(({ mult, costLabel }, i) => {
+            const { c1, c2 } = MULT_COLS[i + 1];
+            const owned      = player.multiplier >= mult;
+            const cost       = MULTIPLIER_COSTS[mult];
+            const affordable = player.cash >= cost;
+            const borderCol  = owned ? '#ff8888' : affordable ? '#555555' : '#333333';
+            drawBox(multBoxR1, multBoxR2, c1, c2, borderCol, '#0a0a0a');
+            if (owned) {
+                writeCol(multMidR - 1, c1, c2, '★', '#ff8888');
+                writeCol(multMidR,     c1, c2, `${mult}x`, '#ff8888');
+                writeCol(multMidR + 1, c1, c2, 'ACTIVE', '#ff8888');
+            } else {
+                writeCol(multMidR - 1, c1, c2, `${mult}x`, affordable ? '#888888' : '#444444');
+                writeCol(multMidR,     c1, c2, costLabel, affordable ? '#aaaaaa' : '#555555');
+                writeCol(multMidR + 1, c1, c2, 'LOCKED', '#2a2a2a');
+            }
+        });
+    }
+
+    writeCenter(g, KB_TOP - 1, 'PRESS ENTER TO CONTINUE');
+    for (let c = 0; c < COLS; c++) col[KB_TOP-1][c] = '#666666';
+
+    return { g, col };
+}
+
+async function showUpgradeScreen(fromGrid, fromColors) {
+    const { g: upG, col: upCol } = buildUpgradeGrid();
+    transitioning = true;
+    await animateScrollDown(fromGrid, upG, fromColors, upCol);
+    transitioning = false;
+    const full = [...upG.slice(0, KB_TOP), ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(' '))];
+    const fullC = [...upCol.slice(0, KB_TOP), ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(null))];
+    renderer.render(full, fullC, false);
+    waitingForUpgrade = true;
+}
+
+function handleUpgradeKey(k) {
+    let changed = false;
+    if (k === 'q') {
+        const order = ['red', 'blue', 'yellow'];
+        const next = order.find(key => !player.unlocked.has(key));
+        if (next) {
+            const cost = UNLOCK_COSTS[next];
+            if (player.cash >= cost) {
+                player.cash -= cost;
+                player.unlocked.add(next);
+                changed = true;
+            }
+        }
+    } else if (k === 'w' && player.unlocked.has('red')) {
+        const curIdx = MULTIPLIER_ORDER.indexOf(player.multiplier);
+        const nextMult = MULTIPLIER_ORDER[curIdx + 1];
+        if (nextMult) {
+            const cost = MULTIPLIER_COSTS[nextMult];
+            if (player.cash >= cost) {
+                player.cash -= cost;
+                player.multiplier = nextMult;
+                changed = true;
+            }
+        }
+    }
+    if (!changed) return;
+    // Re-render upgrade screen in place
+    const { g, col } = buildUpgradeGrid();
+    const full = [...g.slice(0, KB_TOP), ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(' '))];
+    const fullC = [...col.slice(0, KB_TOP), ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(null))];
+    renderer.render(full, fullC, false);
+}
+
+async function handleUpgradeEnter() {
+    waitingForUpgrade = false;
+    const { g, col } = buildUpgradeGrid();
+    Object.assign(player, { startingCash: player.cash, green: 0, red: 0, blue: 0, yellow: 0 });
+    gameActive = true;
+    // scroll straight into the game
+    const upFull = [...g.slice(0, KB_TOP), ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(' '))];
+    const upFullC = [...col.slice(0, KB_TOP), ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(null))];
+    const { g: gameG, col: gameCol } = buildGameGrid();
+    transitioning = true;
+    await animateScrollDown(upFull, gameG, upFullC, gameCol);
+    transitioning = false;
+    startRound();
 }
 
 async function endRound() {
-    clearInterval(roundInterval);
     gameActive = false;
 
-    const portfolio = player.shares * stock.price;
-    const total     = player.cash + portfolio;
-    const profit    = total - player.startingCash;
+    const colorTotal = ['green','red','blue','yellow'].reduce((s, c) => s + player[c] * priceAtTick(c, ROUND_TICKS), 0);
+    const total  = player.cash + colorTotal;
+    const profit = total - player.startingCash;
+
+    // Liquidate stocks into cash now so the KB cash row updates immediately
+    ['green','red','blue','yellow'].forEach(c => {
+        player.cash += player[c] * priceAtTick(c, ROUND_TICKS);
+        player[c] = 0;
+    });
 
     const resultsLines = [
-        'ROUND OVER', '', `Final: $${stock.price.toFixed(2)}`,
-        `Unsold: ${player.shares}`, '',
-        `Cash: $${player.cash.toFixed(2)}`,
-        `Portfolio: $${portfolio.toFixed(2)}`,
-        `Total: $${total.toFixed(2)}`, '',
+        'ROUND OVER', '',
         `Profit: $${profit.toFixed(2)}`,
         `(${((profit / player.startingCash) * 100).toFixed(1)}%)`
     ];
 
-    document.getElementById('resultsScreen').classList.remove('hidden');
-    const { g: gameG } = buildGameGrid();
-    await animateScrollDown(gameG, parseGrid(resultsLines), resultsRenderer);
+    const { g: gameG, col: gameCol } = buildGameGrid();
+    const toGrid = makeGrid();
+    resultsLines.forEach((line, i) => writeCenter(toGrid, i + 1, line));
+    writeCenter(toGrid, KB_TOP - 1, 'PRESS ENTER TO CONTINUE');
+
+    transitioning = true;
+    await animateScrollDown(gameG, toGrid, gameCol, null);
+    transitioning = false;
+    const full = [...toGrid.slice(0, KB_TOP), ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(' '))];
+    renderer.render(full, null, false);
+    waitingForResults = true;
 }
 
 function handleResultsEnter() {
-    document.getElementById('resultsScreen').classList.add('hidden');
-    Object.assign(player, { cash: 1000, shares: 0, startingCash: 1000, green: 0, red: 0, blue: 0, yellow: 0 });
-    Object.assign(stock,  { price: 45, history: [45], volatility: 0.15 });
-    gameActive = true;
-    startRound();
+    waitingForResults = false;
+    const fromGrid = makeGrid();
+    const fromCol  = makeColorGrid();
+    showUpgradeScreen(fromGrid, fromCol);
 }
 
 // ─── TRADING ──────────────────────────────────────────────────────────────────
 const KEY_COLOR = { q: 'green', w: 'red', e: 'blue', r: 'yellow', a: 'green', s: 'red', d: 'blue', f: 'yellow' };
-
-function buyStock(qty) {
-    if (!qty || qty <= 0 || stock.price * qty > player.cash) return false;
-    player.cash -= stock.price * qty; player.shares += qty;
-    const color = KEY_COLOR[activeKey];
-    if (color) player[color] += qty;
-    return true;
-}
-function sellStock(qty) {
-    if (!qty || qty <= 0 || player.shares < qty) return false;
-    player.cash += stock.price * qty; player.shares -= qty;
-    const color = KEY_COLOR[activeKey];
-    if (color) player[color] = Math.max(0, player[color] - qty);
-    return true;
-}
+const BUY_KEYS  = new Set(['q','w','e','r']);
+const SELL_KEYS = new Set(['a','s','d','f']);
 
 function submitCommand() {
-    if (waitingForEnter) { waitingForEnter = false; showIntroScreen(); return; }
-    if (!gameActive || !currentMode) return;
-    openQtyModal(currentMode);
+    if (waitingForUpgrade) { handleUpgradeEnter(); return; }
+    if (waitingForResults) { handleResultsEnter(); return; }
+    if (waitingForEnter) {
+        waitingForEnter = false;
+        transitioning = true;
+        clearInterval(broadwayInterval);
+        broadwayInterval = null;
+        startGameplay();
+    }
 }
-function openQtyModal(mode) {
-    document.getElementById('qtyLabel').textContent = `QUANTITY TO ${mode.toUpperCase()}:`;
-    const m = document.getElementById('qtyModal'); m.style.display = 'flex';
-    setTimeout(() => document.getElementById('qtyInput').focus(), 50);
-}
-function closeQtyModal() { document.getElementById('qtyModal').style.display = 'none'; }
-function confirmQty() {
-    const qty = parseInt(document.getElementById('qtyInput').value, 10);
-    closeQtyModal();
-    if (!isNaN(qty) && qty > 0 && (currentMode === 'buy' ? buyStock : sellStock)(qty))
-        { currentMode = null; activeKey = null; updateGameDisplay(); }
-}
-document.getElementById('qtyInput').addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); confirmQty(); }
-    if (e.key === 'Escape') { closeQtyModal(); }
+
+// Track which keys are physically held right now. The animation loops read this
+// each frame — no rendering ever happens inside the input handlers.
+const keysHeld = new Set();
+
+function flashKey(keyVal) { keysHeld.add(keyVal); }
+function isKeyPressed(keyVal) { return keysHeld.has(keyVal) || keysHeld.has(keyVal.toLowerCase()) || keysHeld.has(keyVal.toUpperCase()); }
+
+document.addEventListener('keyup', e => {
+    keysHeld.delete(e.key);
+    keysHeld.delete(e.key.toLowerCase());
+    keysHeld.delete(e.key.toUpperCase());
 });
 
 // ─── INPUT ────────────────────────────────────────────────────────────────────
-let activeKey = null;
-
-function flashKeyButton(key) {
-    flashKey(key.toLowerCase());
-    flashKey(key); // covers 'Enter' etc
-}
-
 document.addEventListener('keydown', e => {
-    flashKeyButton(e.key);
+    keysHeld.add(e.key);
+    if (e.repeat) return;
+
     if (e.key === 'Enter') { e.preventDefault(); submitCommand(); return; }
 
-    const buyKeys  = { q: 'q', Q: 'q', w: 'w', W: 'w', e: 'e', E: 'e', r: 'r', R: 'r' };
-    const sellKeys = { a: 'a', A: 'a', s: 's', S: 's', d: 'd', D: 'd', f: 'f', F: 'f' };
+    const k = e.key.toLowerCase();
+    if (!BUY_KEYS.has(k) && !SELL_KEYS.has(k)) return;
+    e.preventDefault();
 
-    if (buyKeys[e.key] !== undefined) {
-        e.preventDefault();
-        activeKey = buyKeys[e.key];
-        if (waitingForEnter) {
-            const color = KEY_COLOR[activeKey];
-            if (color) player[color] += 1;
-            const { g, col } = buildBroadwayGrid(broadwayTick);
-            introRenderer.render(g, col);
-        } else if (gameActive) {
-            currentMode = currentMode === 'buy' ? null : 'buy'; updateGameDisplay();
+    if (waitingForEnter) return;
+
+    if (waitingForUpgrade) {
+        handleUpgradeKey(k);
+        return;
+    }
+
+    if (!gameActive) return;
+    const color = KEY_COLOR[k];
+    if (!color) return;
+    if (!player.unlocked.has(color)) return;
+    const tick = Math.round(scanCol / (COLS - 1) * ROUND_TICKS);
+
+    const recordImpact = (isBuy) => {
+        const colorHexMap = { green: '#88ff88', red: '#ff8888', blue: '#88aaff', yellow: '#ffee88' };
+        const hist = STOCKS[color].history;
+        const t  = (hist.length - 1) * (scanCol / (COLS - 1));
+        const lo = Math.floor(t), hi = Math.min(lo + 1, hist.length - 1);
+        const val = hist[lo] + (hist[hi] - hist[lo]) * (t - lo);
+        buyImpacts.push({ row: chartRowOf(val), col: scanCol, hex: colorHexMap[color], frames: 5, isBuy });
+    };
+
+    if (BUY_KEYS.has(k)) {
+        const price = priceAtTick(color, tick);
+        const qty = player.multiplier;
+        const total = price * qty;
+        if (player.cash >= total) {
+            player.cash -= total;
+            player[color] += qty;
+            recordImpact(true);
+            updateGameDisplay();
+        } else if (player.cash >= price) {
+            const canBuy = Math.floor(player.cash / price);
+            player.cash -= price * canBuy;
+            player[color] += canBuy;
+            recordImpact(true);
+            updateGameDisplay();
         }
-    } else if (sellKeys[e.key] !== undefined) {
-        e.preventDefault();
-        activeKey = sellKeys[e.key];
-        if (waitingForEnter) {
-            const color = KEY_COLOR[activeKey];
-            if (color) player[color] = Math.max(0, player[color] - 1);
-            const { g, col } = buildBroadwayGrid(broadwayTick);
-            introRenderer.render(g, col);
-        } else if (gameActive) {
-            currentMode = currentMode === 'sell' ? null : 'sell'; updateGameDisplay();
+    } else {
+        const price = priceAtTick(color, tick);
+        const qty = Math.min(player.multiplier, player[color]);
+        if (qty > 0) {
+            player.cash += price * qty;
+            player[color] -= qty;
+            recordImpact(false);
+            updateGameDisplay();
         }
     }
 });
 
-// ─── ON-SCREEN KEYBOARD ───────────────────────────────────────────────────────
-wireCanvasKeyboard(document.getElementById('introCanvas'));
-wireCanvasKeyboard(document.getElementById('resultsCanvas'));
-wireCanvasKeyboard(document.getElementById('gameCanvas'));
-
 // ─── CUSTOM CURSOR ────────────────────────────────────────────────────────────
-const cursorEl = document.getElementById('cursor');
+const cursorEl  = document.getElementById('cursor');
 const cursorSvg = document.getElementById('cursorSvg');
 function setCursorVariant(onButton) {
     cursorEl.style.width = '24px'; cursorEl.style.height = '24px';
@@ -945,7 +1441,10 @@ setCursorVariant(false);
 function isOverButton(e) {
     const t = e.target;
     if (t.tagName === 'BUTTON') return true;
-    if (t.tagName === 'CANVAS') { const r = t.getBoundingClientRect(); return !!hitTestKeyboard(t, (e.clientX-r.left)*t.width/r.width, (e.clientY-r.top)*t.height/r.height); }
+    if (t.tagName === 'CANVAS') {
+        const r = t.getBoundingClientRect();
+        return !!hitTestKeyboard(t, (e.clientX - r.left) * t.width / r.width, (e.clientY - r.top) * t.height / r.height);
+    }
     return false;
 }
 document.addEventListener('mousemove', e => {
@@ -955,6 +1454,9 @@ document.addEventListener('mousemove', e => {
 document.addEventListener('mouseleave', () => { cursorEl.style.opacity = '0'; });
 document.addEventListener('mouseenter', () => { cursorEl.style.opacity = '1'; });
 
+// ─── BOOT ─────────────────────────────────────────────────────────────────────
+// Draw keyboard immediately so it's visible from frame 1
+drawKeyboard();
 requestAnimationFrame(() => requestAnimationFrame(() => showIntroScreen()));
 </script>
 </body>
