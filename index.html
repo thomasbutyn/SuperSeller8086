@@ -69,6 +69,18 @@
         }
         #resultsBtn:hover { background: #cccccc; box-shadow: 0 0 10px rgba(255,255,255,0.5); }
 
+        /* Social links overlay — sits over the lower half of the console content zone */
+        /* Social link overlays: invisible <a> tags positioned over rendered grid rows */
+        .social-link-overlay {
+            display: none;
+            position: fixed;
+            z-index: 400;
+            text-decoration: none;
+            cursor: pointer;
+            background: transparent;
+        }
+        .social-link-overlay:hover { background: rgba(255,255,255,0.04); }
+
         #cursor { position: fixed; top: 0; left: 0; pointer-events: none; z-index: 99999; }
     </style>
 </head>
@@ -83,6 +95,14 @@
     <div class="text-overlay" id="mainOverlay"></div>
 </div>
 
+<!-- Social link overlays: invisible <a> tags positioned over each platform's grid rows.
+     All visual rendering is done in the canvas grid. These provide clickability only. -->
+<a id="slink-fb" class="social-link-overlay" href="https://facebook.com/ballrollergames"           target="_blank" rel="noopener"></a>
+<a id="slink-li" class="social-link-overlay" href="https://www.linkedin.com/company/ballroller-games/" target="_blank" rel="noopener"></a>
+<a id="slink-ig" class="social-link-overlay" href="https://instagram.com/ballrollergames"           target="_blank" rel="noopener"></a>
+<a id="slink-yt" class="social-link-overlay" href="https://www.youtube.com/@BallRoller-Games"      target="_blank" rel="noopener"></a>
+<a id="slink-x"  class="social-link-overlay" href="https://x.com/ballrollergames"                  target="_blank" rel="noopener"></a>
+
 <button id="resultsBtn" onclick="handleResultsEnter()">NEXT</button>
 
 <script>
@@ -93,6 +113,18 @@ const COLS = 40, ROWS = 48;
 // Rows KB_TOP–47 are the persistent keyboard drawn every frame from the frozen keyboard grid.
 // Layout: rows 33-35=cash row, 36-38=counters(3 tall), 39-41=QWER, 42-44=ASDF, 45-47=ENTER
 const KB_TOP = 33;
+
+// Named sub-regions within the keyboard zone (absolute grid rows)
+const KB_CASH_R1      = KB_TOP;          // Cash box top row     (33)
+const KB_CASH_R2      = KB_TOP + 2;      // Cash box bottom row  (35)
+const KB_COUNTER_TOP  = KB_TOP + 3;      // Counter boxes top    (36)
+const KB_KEY_ROW0     = KB_TOP + 3 + 3;  // QWER key top row     (39)
+const KB_KEY_HEIGHT   = 3;               // Each key is 3 rows tall
+
+// Tick rates (ms) used by the various intervals
+const TICK_GAME_MS     = 80;   // counter border + game scan loop
+const TICK_BROADWAY_MS = 120;  // broadway intro animation
+const TICK_SCROLL_MS   = 40;   // screen scroll transition
 
 // ─── 2D GRID HELPERS ──────────────────────────────────────────────────────────
 const makeGrid   = () => Array.from({ length: ROWS }, () => Array(COLS).fill(' '));
@@ -419,6 +451,21 @@ function hitTestKeyboard(canvas, px, py) {
     }) ?? null;
 }
 
+// Hit-test the upgrade buy buttons in the content zone (rows 0..KB_TOP-1).
+// Returns 'q', 'w', or null.
+function hitTestUpgradeButtons(canvas, px, py) {
+    if (!waitingForUpgrade) return null;
+    const cw = canvas.width, ch = canvas.height;
+    const charW = cw / COLS, charH = ch / ROWS;
+    const gridCol = Math.floor(px / charW);
+    const gridRow = Math.floor(py / charH);
+    // Stock Q-BUY box: rows 5–9, cols 0–8
+    if (gridRow >= 5 && gridRow <= 9 && gridCol >= 0 && gridCol <= 8) return 'q';
+    // Multiplier W-BUY box: rows 13–17, cols 0–7
+    if (gridRow >= 13 && gridRow <= 17 && gridCol >= 0 && gridCol <= 7) return 'w';
+    return null;
+}
+
 function wireCanvasKeyboard(canvas) {
     const fire = (px, py) => {
         const rect = canvas.getBoundingClientRect();
@@ -430,18 +477,43 @@ function wireCanvasKeyboard(canvas) {
     };
     canvas.addEventListener('pointerdown', e => {
         e.preventDefault();
-        const hit = fire(e.clientX, e.clientY);
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width  / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const cx = (e.clientX - rect.left) * scaleX;
+        const cy = (e.clientY - rect.top)  * scaleY;
+
+        // Check upgrade buy buttons first (content zone)
+        const upgradeKey = hitTestUpgradeButtons(canvas, cx, cy);
+        if (upgradeKey) {
+            keysHeld.add(upgradeKey);
+            handleUpgradeKey(upgradeKey);
+            return;
+        }
+
+        const hit = hitTestKeyboard(canvas, cx, cy);
         if (!hit) return;
         keysHeld.add(hit.key);
         if (hit.key === 'Enter') { submitCommand(); return; }
         document.dispatchEvent(new KeyboardEvent('keydown', { key: hit.key, bubbles: true, repeat: false }));
     });
     canvas.addEventListener('pointerup', e => {
-        const hit = fire(e.clientX, e.clientY);
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const cx = (e.clientX - rect.left) * scaleX;
+        const cy = (e.clientY - rect.top)  * scaleY;
+        const upgradeKey = hitTestUpgradeButtons(canvas, cx, cy);
+        if (upgradeKey) { keysHeld.delete(upgradeKey); return; }
+        const hit = hitTestKeyboard(canvas, cx, cy);
         if (hit) { keysHeld.delete(hit.key); keysHeld.delete(hit.key.toLowerCase()); }
     });
     canvas.addEventListener('pointercancel', e => {
-        const hit = fire(e.clientX, e.clientY);
+        keysHeld.delete('q'); keysHeld.delete('w');
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const hit = hitTestKeyboard(canvas, (e.clientX - rect.left) * scaleX, (e.clientY - rect.top) * scaleY);
         if (hit) { keysHeld.delete(hit.key); keysHeld.delete(hit.key.toLowerCase()); }
     });
 }
@@ -450,12 +522,12 @@ wireCanvasKeyboard(document.getElementById('mainCanvas'));
 
 // ─── BROADWAY LIGHTS ──────────────────────────────────────────────────────────
 // Content zone is rows 0..KB_TOP-1 = 0..35 (36 rows).
-const LIGHTS = { r1: 1, r2: 32, c1: 1, c2: 38 };
+const LIGHTS = { r1: 1, r2: 31, c1: 1, c2: 38 };
 const RINGS  = [
-    { rect: { r1: 12, r2: 21, c1:  9, c2: 30 }, on: '#33ff33', off: '#002a00' },
-    { rect: { r1:  9, r2: 24, c1:  7, c2: 32 }, on: '#ff3333', off: '#2a0000' },
-    { rect: { r1:  6, r2: 27, c1:  5, c2: 34 }, on: '#3399ff', off: '#00102a' },
-    { rect: { r1:  3, r2: 30, c1:  3, c2: 36 }, on: '#ffee33', off: '#2a2500' },
+    { rect: { r1: 12, r2: 20, c1:  9, c2: 30 }, on: '#33ff33', off: '#002a00' },
+    { rect: { r1:  9, r2: 23, c1:  7, c2: 32 }, on: '#ff3333', off: '#2a0000' },
+    { rect: { r1:  6, r2: 26, c1:  5, c2: 34 }, on: '#3399ff', off: '#00102a' },
+    { rect: { r1:  3, r2: 29, c1:  3, c2: 36 }, on: '#ffee33', off: '#2a2500' },
 ];
 
 function perimeterPositions({ r1, r2, c1, c2 }) {
@@ -626,8 +698,8 @@ function buildBroadwayGrid(tick) {
     // Static trim frames
     {
         const trimFrames = [
-            { r1: 2, r2: 31, c1: 2, c2: 37 },
-            { r1: 0, r2: 33, c1: 0, c2: 39 },
+            { r1: 2, r2: 30, c1: 2, c2: 37 },
+            { r1: 0, r2: 32, c1: 0, c2: 39 },
         ];
         trimFrames.forEach(({ r1, r2, c1, c2 }) => {
             const setTrim = (r, c, ch) => {
@@ -645,47 +717,443 @@ function buildBroadwayGrid(tick) {
     return { g, col };
 }
 
-// ─── SCROLL ANIMATION (content zone only: rows 0..KB_TOP-1) ──────────────────
+// ─── RADIAL REVEAL TRANSITION (content zone only: rows 0..KB_TOP-1) ──────────
+// fromFn/toFn: () => { g, col } — called each frame so both scenes animate live.
+function animateRadialReveal(fromFn, toFn, tickMs = TICK_SCROLL_MS, invert = false) {
+    const STEPS   = KB_TOP;
+    const cx      = (COLS - 1) / 2;
+    const cy      = (KB_TOP - 1) / 2;
+    const aspect  = KB_TOP / COLS;
+    // Corner distance in aspect-corrected space — overshoot by 5% to guarantee full coverage
+    const maxDist = Math.sqrt(cx * cx + (cy / aspect) * (cy / aspect)) * 1.05;
+    const RING    = maxDist * 0.06;
+
+    return new Promise(resolve => {
+        let step = 0;
+        const interval = setInterval(() => {
+            step++;
+            const radius = invert
+                ? maxDist * (1 - step / STEPS)
+                : maxDist * (step / STEPS);
+
+            const { g: fromG, col: fromCol } = fromFn();
+            const { g: toG,   col: toCol   } = toFn();
+
+            const grid   = [];
+            const colors = [];
+            for (let r = 0; r < KB_TOP; r++) {
+                const row    = [];
+                const rowCol = [];
+                for (let c = 0; c < COLS; c++) {
+                    const dr     = (r - cy) / (KB_TOP / COLS);
+                    const dc     = c - cx;
+                    const dist   = Math.sqrt(dc * dc + dr * dr);
+                    const showTo = invert ? dist >= radius : dist <= radius;
+                    const onRing = invert
+                        ? (dist >= radius && dist < radius + RING)
+                        : (dist <= radius && dist > radius - RING);
+
+                    if (onRing) {
+                        row.push(toG[r][c] === ' ' ? '░' : toG[r][c]);
+                        rowCol.push('#ffffff');
+                    } else if (showTo) {
+                        row.push(toG[r][c]);
+                        rowCol.push(toCol[r][c]);
+                    } else {
+                        row.push(fromG[r][c]);
+                        rowCol.push(fromCol[r][c]);
+                    }
+                }
+                grid.push(row);
+                colors.push(rowCol);
+            }
+
+            const fullGrid  = [...grid,   ...Array.from({ length: ROWS - KB_TOP }, () => Array(COLS).fill(' '))];
+            const fullColor = [...colors, ...Array.from({ length: ROWS - KB_TOP }, () => Array(COLS).fill(null))];
+            renderer.render(fullGrid, fullColor, false);
+
+            if (step >= STEPS) { clearInterval(interval); resolve(); }
+        }, tickMs);
+    });
+}
+
+// ─── CLOCK WIPE TRANSITION (content zone only: rows 0..KB_TOP-1) ─────────────
+// fromFn/toFn: () => { g, col } — called each frame so both scenes animate live.
+// Can also be called with static grids via animateClockWipeStatic.
+function animateClockWipe(fromFn, toFn, tickMs = TICK_SCROLL_MS) {
+    const STEPS   = KB_TOP;
+    const cx      = (COLS - 1) / 2;
+    const cy      = (KB_TOP - 1) / 2;
+    const BAR_ARC = Math.PI * 0.08;
+
+    const cellAngle = (r, c) => {
+        const dx =  (c - cx);
+        const dy = -(r - cy) / (KB_TOP / COLS);
+        let a = Math.atan2(dx, dy);
+        if (a < 0) a += Math.PI * 2;
+        return a;
+    };
+
+    return new Promise(resolve => {
+        let step = 0;
+        const interval = setInterval(() => {
+            step++;
+            const sweep = (step / STEPS) * Math.PI * 2;
+
+            const { g: fromG, col: fromCol } = fromFn();
+            const { g: toG,   col: toCol   } = toFn();
+
+            const grid   = [];
+            const colors = [];
+            for (let r = 0; r < KB_TOP; r++) {
+                const row    = [];
+                const rowCol = [];
+                for (let c = 0; c < COLS; c++) {
+                    const a        = cellAngle(r, c);
+                    const revealed = a <= sweep;
+                    const onBar    = revealed && (sweep - a) <= BAR_ARC;
+
+                    if (onBar) {
+                        row.push(toG[r][c] === ' ' ? '░' : toG[r][c]);
+                        rowCol.push('#ffffff');
+                    } else if (revealed) {
+                        row.push(toG[r][c]);
+                        rowCol.push(toCol[r][c]);
+                    } else {
+                        row.push(fromG[r][c]);
+                        rowCol.push(fromCol[r][c]);
+                    }
+                }
+                grid.push(row);
+                colors.push(rowCol);
+            }
+
+            const fullGrid  = [...grid,   ...Array.from({ length: ROWS - KB_TOP }, () => Array(COLS).fill(' '))];
+            const fullColor = [...colors, ...Array.from({ length: ROWS - KB_TOP }, () => Array(COLS).fill(null))];
+            renderer.render(fullGrid, fullColor, false);
+
+            if (step >= STEPS) { clearInterval(interval); resolve(); }
+        }, tickMs);
+    });
+}
+
+// ─── CHECKERBOARD TRANSITION (content zone only: rows 0..KB_TOP-1) ────────────
 /**
- * Animate a scroll-down transition only within the content zone.
- * fromGrid and toGrid are full ROWS-tall grids, but we only scroll rows 0..KB_TOP-1.
- * The keyboard zone stays untouched.
+ * Divides the content zone into a 4×4 grid of tiles. Each tile flips from
+ * fromGrid to toGrid in a pseudo-random sequence. The leading edge of each
+ * tile flickers white (matching the other transition effects).
+ * fromGrid/toGrid: static grid snapshots.
  */
-function animateScrollDown(fromGrid, toGrid, fromColors = null, toColors = null, tickMs = 40) {
-    // Work only on the content-zone slice
-    const current     = fromGrid.slice(0, KB_TOP).map(r => [...r]);
-    const currentCol  = fromColors
+function animateCheckerboard(fromGrid, toGrid, fromColors = null, toColors = null, tickMs = TICK_SCROLL_MS) {
+    const from    = fromGrid.slice(0, KB_TOP).map(r => [...r]);
+    const fromCol = fromColors
         ? fromColors.slice(0, KB_TOP).map(r => [...r])
         : Array.from({ length: KB_TOP }, () => Array(COLS).fill(null));
-    const target      = toGrid.slice(0, KB_TOP);
-    const targetCol   = toColors
+    const to      = toGrid.slice(0, KB_TOP);
+    const toCol   = toColors
         ? toColors.slice(0, KB_TOP)
         : Array.from({ length: KB_TOP }, () => Array(COLS).fill(null));
 
+    const TILES_X = 4, TILES_Y = 4;
+    const N_TILES = TILES_X * TILES_Y; // 16
+    const tileW   = Math.ceil(COLS   / TILES_X);
+    const tileH   = Math.ceil(KB_TOP / TILES_Y);
+
+    // Pseudo-random shuffle of tile indices (seeded so it's deterministic each call)
+    const order = Array.from({ length: N_TILES }, (_, i) => i);
+    // Simple Fisher-Yates with a fixed seed
+    let seed = 0x9e3779b9;
+    const rand = () => { seed = (seed ^ (seed << 13)) >>> 0; seed = (seed ^ (seed >> 7)) >>> 0; seed = (seed ^ (seed << 17)) >>> 0; return seed / 0xffffffff; };
+    for (let i = order.length - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1));
+        [order[i], order[j]] = [order[j], order[i]];
+    }
+
+    // Each tile flips over TILE_STEPS frames; tiles are staggered across STEPS total frames
+    const TILE_STEPS = 6;
+    const STEPS      = N_TILES + TILE_STEPS; // ~22 frames total
+
+    // Map tile index → frame it starts flipping
+    const startFrame = {};
+    order.forEach((tileIdx, seq) => { startFrame[tileIdx] = seq; });
+
+    const current    = from.map(r => [...r]);
+    const currentCol = fromCol.map(r => [...r]);
+
     return new Promise(resolve => {
-        let tick = 0;
+        let step = 0;
         const interval = setInterval(() => {
-            for (let c = 0; c < COLS; c++) {
-                for (let r = KB_TOP - 1; r > 0; r--) {
-                    current[r][c]    = current[r - 1][c];
-                    currentCol[r][c] = currentCol[r - 1][c];
+            step++;
+
+            for (let ty = 0; ty < TILES_Y; ty++) {
+                for (let tx = 0; tx < TILES_X; tx++) {
+                    const tileIdx = ty * TILES_X + tx;
+                    const sf      = startFrame[tileIdx];
+                    const elapsed = step - sf; // frames since this tile started
+
+                    const r0 = ty * tileH, r1 = Math.min(r0 + tileH, KB_TOP);
+                    const c0 = tx * tileW, c1 = Math.min(c0 + tileW, COLS);
+
+                    if (elapsed <= 0) continue; // not started yet
+
+                    const done   = elapsed > TILE_STEPS;
+                    // Leading edge: first 1–2 frames of the tile's flip
+                    const onEdge = !done && elapsed <= 2;
+
+                    for (let r = r0; r < r1; r++) {
+                        for (let c = c0; c < c1; c++) {
+                            if (onEdge) {
+                                current[r][c]    = to[r][c] === ' ' ? '░' : to[r][c];
+                                currentCol[r][c] = '#ffffff';
+                            } else if (done) {
+                                current[r][c]    = to[r][c];
+                                currentCol[r][c] = toCol[r][c];
+                            }
+                            // else: mid-flip, keep current (already set)
+                        }
+                    }
                 }
-                current[0][c]    = target[KB_TOP - 1 - tick]?.[c] ?? ' ';
-                currentCol[0][c] = targetCol[KB_TOP - 1 - tick]?.[c] ?? null;
+            }
+
+            const fullGrid  = [...current,    ...Array.from({ length: ROWS - KB_TOP }, () => Array(COLS).fill(' '))];
+            const fullColor = [...currentCol, ...Array.from({ length: ROWS - KB_TOP }, () => Array(COLS).fill(null))];
+            renderer.render(fullGrid, fullColor, false);
+
+            if (step >= STEPS) { clearInterval(interval); resolve(); }
+        }, tickMs);
+    });
+}
+
+// ─── SPIRAL-OUT TRANSITION (content zone only: rows 0..KB_TOP-1) ─────────────
+/**
+ * Cells are revealed outward from the centre in concentric rectangular shells,
+ * producing a spiral/expanding-box effect. Each shell flickers white on its
+ * leading edge matching the other transitions.
+ * fromGrid/toGrid: static grid snapshots.
+ */
+function animateSpiralOut(fromGrid, toGrid, fromColors = null, toColors = null, tickMs = TICK_SCROLL_MS) {
+    const from    = fromGrid.slice(0, KB_TOP).map(r => [...r]);
+    const fromCol = fromColors
+        ? fromColors.slice(0, KB_TOP).map(r => [...r])
+        : Array.from({ length: KB_TOP }, () => Array(COLS).fill(null));
+    const to      = toGrid.slice(0, KB_TOP);
+    const toCol   = toColors
+        ? toColors.slice(0, KB_TOP)
+        : Array.from({ length: KB_TOP }, () => Array(COLS).fill(null));
+
+    // Assign each cell a "shell index" = Chebyshev distance from centre
+    const cx = (COLS - 1) / 2;
+    const cy = (KB_TOP  - 1) / 2;
+    // Aspect-correct: scale row distance so shells look circular
+    const aspect = COLS / KB_TOP;
+
+    const shellOf = (r, c) =>
+        Math.round(Math.max(Math.abs((c - cx)), Math.abs((r - cy) * aspect)));
+
+    const maxShell = shellOf(0, 0);
+    const SHELL_STEPS = 3; // frames each shell's edge is visible before fully revealed
+    const STEPS = maxShell + SHELL_STEPS + 1;
+
+    const current    = from.map(r => [...r]);
+    const currentCol = fromCol.map(r => [...r]);
+
+    return new Promise(resolve => {
+        let step = 0;
+        const interval = setInterval(() => {
+            step++;
+
+            for (let r = 0; r < KB_TOP; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    const s       = shellOf(r, c);
+                    const elapsed = step - s;
+                    if (elapsed <= 0) continue;
+                    const done   = elapsed > SHELL_STEPS;
+                    const onEdge = elapsed <= 1;
+
+                    if (onEdge) {
+                        current[r][c]    = to[r][c] === ' ' ? '░' : to[r][c];
+                        currentCol[r][c] = '#ffffff';
+                    } else if (done) {
+                        current[r][c]    = to[r][c];
+                        currentCol[r][c] = toCol[r][c];
+                    }
+                }
+            }
+
+            const fullGrid  = [...current,    ...Array.from({ length: ROWS - KB_TOP }, () => Array(COLS).fill(' '))];
+            const fullColor = [...currentCol, ...Array.from({ length: ROWS - KB_TOP }, () => Array(COLS).fill(null))];
+            renderer.render(fullGrid, fullColor, false);
+
+            if (step >= STEPS) { clearInterval(interval); resolve(); }
+        }, tickMs);
+    });
+}
+
+// ─── HORIZONTAL BARS TRANSITION ───────────────────────────────────────────────
+// Rows reveal top-to-bottom in staggered bands with a white leading edge.
+function animateHorizontalBars(fromGrid, toGrid, fromColors = null, toColors = null, tickMs = TICK_SCROLL_MS) {
+    const from    = fromGrid.slice(0, KB_TOP).map(r => [...r]);
+    const fromCol = fromColors ? fromColors.slice(0, KB_TOP).map(r => [...r]) : Array.from({ length: KB_TOP }, () => Array(COLS).fill(null));
+    const to      = toGrid.slice(0, KB_TOP);
+    const toCol   = toColors  ? toColors.slice(0, KB_TOP)  : Array.from({ length: KB_TOP }, () => Array(COLS).fill(null));
+    const BAR_H   = 2; // rows per bar
+    const N_BARS  = Math.ceil(KB_TOP / BAR_H);
+    const EDGE    = 1;
+    const STEPS   = N_BARS + EDGE + 2;
+    const current    = from.map(r => [...r]);
+    const currentCol = fromCol.map(r => [...r]);
+    return new Promise(resolve => {
+        let step = 0;
+        const interval = setInterval(() => {
+            step++;
+            for (let b = 0; b < N_BARS; b++) {
+                const elapsed = step - b;
+                if (elapsed <= 0) continue;
+                const r0 = b * BAR_H, r1 = Math.min(r0 + BAR_H, KB_TOP);
+                const done   = elapsed > EDGE + 1;
+                const onEdge = elapsed <= EDGE;
+                for (let r = r0; r < r1; r++) {
+                    for (let c = 0; c < COLS; c++) {
+                        if (onEdge) { current[r][c] = to[r][c] === ' ' ? '░' : to[r][c]; currentCol[r][c] = '#ffffff'; }
+                        else if (done) { current[r][c] = to[r][c]; currentCol[r][c] = toCol[r][c]; }
+                    }
+                }
             }
             const fullGrid  = [...current,    ...Array.from({ length: ROWS - KB_TOP }, () => Array(COLS).fill(' '))];
             const fullColor = [...currentCol, ...Array.from({ length: ROWS - KB_TOP }, () => Array(COLS).fill(null))];
             renderer.render(fullGrid, fullColor, false);
-            tick++;
-            if (tick >= KB_TOP) { clearInterval(interval); resolve(); }
+            if (step >= STEPS) { clearInterval(interval); resolve(); }
         }, tickMs);
     });
+}
+
+// ─── VERTICAL BARS TRANSITION ─────────────────────────────────────────────────
+// Columns reveal left-to-right in staggered bands with a white leading edge.
+function animateVerticalBars(fromGrid, toGrid, fromColors = null, toColors = null, tickMs = TICK_SCROLL_MS) {
+    const from    = fromGrid.slice(0, KB_TOP).map(r => [...r]);
+    const fromCol = fromColors ? fromColors.slice(0, KB_TOP).map(r => [...r]) : Array.from({ length: KB_TOP }, () => Array(COLS).fill(null));
+    const to      = toGrid.slice(0, KB_TOP);
+    const toCol   = toColors  ? toColors.slice(0, KB_TOP)  : Array.from({ length: KB_TOP }, () => Array(COLS).fill(null));
+    const BAR_W   = 2;
+    const N_BARS  = Math.ceil(COLS / BAR_W);
+    const EDGE    = 1;
+    const STEPS   = N_BARS + EDGE + 2;
+    const current    = from.map(r => [...r]);
+    const currentCol = fromCol.map(r => [...r]);
+    return new Promise(resolve => {
+        let step = 0;
+        const interval = setInterval(() => {
+            step++;
+            for (let b = 0; b < N_BARS; b++) {
+                const elapsed = step - b;
+                if (elapsed <= 0) continue;
+                const c0 = b * BAR_W, c1 = Math.min(c0 + BAR_W, COLS);
+                const done   = elapsed > EDGE + 1;
+                const onEdge = elapsed <= EDGE;
+                for (let r = 0; r < KB_TOP; r++) {
+                    for (let c = c0; c < c1; c++) {
+                        if (onEdge) { current[r][c] = to[r][c] === ' ' ? '░' : to[r][c]; currentCol[r][c] = '#ffffff'; }
+                        else if (done) { current[r][c] = to[r][c]; currentCol[r][c] = toCol[r][c]; }
+                    }
+                }
+            }
+            const fullGrid  = [...current,    ...Array.from({ length: ROWS - KB_TOP }, () => Array(COLS).fill(' '))];
+            const fullColor = [...currentCol, ...Array.from({ length: ROWS - KB_TOP }, () => Array(COLS).fill(null))];
+            renderer.render(fullGrid, fullColor, false);
+            if (step >= STEPS) { clearInterval(interval); resolve(); }
+        }, tickMs);
+    });
+}
+
+// ─── SPIRAL CLOCK TRANSITION ──────────────────────────────────────────────────
+// Like the clock wipe but radius grows simultaneously — a spinning sweep that
+// also expands outward, so it spirals from the centre to the corners.
+function animateSpiralClock(fromGrid, toGrid, fromColors = null, toColors = null, tickMs = TICK_SCROLL_MS) {
+    const from    = fromGrid.slice(0, KB_TOP).map(r => [...r]);
+    const fromCol = fromColors ? fromColors.slice(0, KB_TOP).map(r => [...r]) : Array.from({ length: KB_TOP }, () => Array(COLS).fill(null));
+    const to      = toGrid.slice(0, KB_TOP);
+    const toCol   = toColors  ? toColors.slice(0, KB_TOP)  : Array.from({ length: KB_TOP }, () => Array(COLS).fill(null));
+    const STEPS   = KB_TOP;
+    const cx      = (COLS - 1) / 2;
+    const cy      = (KB_TOP - 1) / 2;
+    const maxDist = Math.sqrt(cx * cx + cy * cy);
+    const BAR_ARC = Math.PI * 0.12;
+    const RING    = maxDist * 0.06;
+
+    const cellAngle = (r, c) => {
+        const dx =  (c - cx);
+        const dy = -(r - cy) / (KB_TOP / COLS);
+        let a = Math.atan2(dx, dy);
+        if (a < 0) a += Math.PI * 2;
+        return a;
+    };
+    const cellDist = (r, c) => {
+        const dr = (r - cy) / (KB_TOP / COLS);
+        const dc =  c - cx;
+        return Math.sqrt(dc * dc + dr * dr);
+    };
+
+    const current    = from.map(r => [...r]);
+    const currentCol = fromCol.map(r => [...r]);
+
+    return new Promise(resolve => {
+        let step = 0;
+        const interval = setInterval(() => {
+            step++;
+            const t      = step / STEPS;           // 0→1
+            const sweep  = t * Math.PI * 2;        // clock angle 0→2π
+            const radius = maxDist * t;             // expanding radius
+
+            for (let r = 0; r < KB_TOP; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    const a    = cellAngle(r, c);
+                    const dist = cellDist(r, c);
+
+                    // A cell is "revealed" if its angle has been swept AND it's within radius
+                    const revealed = a <= sweep && dist <= radius;
+                    const onEdge   = revealed && ((sweep - a) <= BAR_ARC || (radius - dist) <= RING);
+
+                    if (onEdge) {
+                        current[r][c]    = to[r][c] === ' ' ? '░' : to[r][c];
+                        currentCol[r][c] = '#ffffff';
+                    } else if (revealed) {
+                        current[r][c]    = to[r][c];
+                        currentCol[r][c] = toCol[r][c];
+                    }
+                }
+            }
+
+            const fullGrid  = [...current,    ...Array.from({ length: ROWS - KB_TOP }, () => Array(COLS).fill(' '))];
+            const fullColor = [...currentCol, ...Array.from({ length: ROWS - KB_TOP }, () => Array(COLS).fill(null))];
+            renderer.render(fullGrid, fullColor, false);
+            if (step >= STEPS) { clearInterval(interval); resolve(); }
+        }, tickMs);
+    });
+}
+
+// ─── RANDOM TRANSITION PICKER ─────────────────────────────────────────────────
+// Pool of all non-scrolling transitions. All feature edge flicker.
+const TRANSITION_POOL = [
+    (f, t, fc, tc) => animateClockWipe(() => ({ g: f, col: fc }), () => ({ g: t, col: tc })),
+    (f, t, fc, tc) => animateCheckerboard(f, t, fc, tc),
+    (f, t, fc, tc) => animateSpiralOut(f, t, fc, tc),
+    (f, t, fc, tc) => animateHorizontalBars(f, t, fc, tc),
+    (f, t, fc, tc) => animateVerticalBars(f, t, fc, tc),
+    (f, t, fc, tc) => animateSpiralClock(f, t, fc, tc),
+];
+let _lastTransitionIdx = -1;
+function randomTransition(fromGrid, toGrid, fromColors = null, toColors = null) {
+    let idx;
+    do { idx = Math.floor(Math.random() * TRANSITION_POOL.length); } while (idx === _lastTransitionIdx);
+    _lastTransitionIdx = idx;
+    return TRANSITION_POOL[idx](fromGrid, toGrid, fromColors, toColors);
 }
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
 let transitioning = false;
 let gameActive       = false;
 let waitingForResults = false;
+let waitingForEnter  = false;
 let lastIntroGrid    = makeGrid();
 let lastIntroColors  = makeColorGrid();
 let broadwayInterval = null;
@@ -699,8 +1167,6 @@ const STOCKS = {
     blue:   { price: 45, history: [45], volatility: 0.12 },
     yellow: { price: 45, history: [45], volatility: 0.12 },
 };
-// Keep a single `stock` alias for legacy references (endRound results etc)
-const stock = STOCKS.green;
 const UNLOCK_COSTS = { red: 100, blue: 1000, yellow: 10000 };
 const MULTIPLIER_COSTS = { 10: 500, 100: 5000, 1000: 50000 };
 const MULTIPLIER_ORDER = [1, 10, 100, 1000];
@@ -708,11 +1174,12 @@ const player = { cash: 100, startingCash: 100, green: 0, red: 0, blue: 0, yellow
 let roundTime = 30, roundInterval = null;
 let scanCol = 0, scanFrame = 0;
 const buyImpacts = []; // { row, col, hex, frames }
+let lastProfit = 0, lastStartingCash = 100; // used by buildSocialGrid for the results summary
 
 // Chart geometry constants (match buildGameGrid layout)
-const CHART_TOP    = 2;
+const CHART_TOP    = 3;
 const CHART_SEP_R  = KB_TOP - 3 - 1; // sepR0 = 29
-const CHART_H      = CHART_SEP_R - CHART_TOP; // 27
+const CHART_H      = CHART_SEP_R - CHART_TOP; // 28
 const CHART_GMIN   = 10, CHART_GMAX = 90, CHART_GRANGE = 80;
 const chartRowOf   = p => CHART_TOP + Math.round(((CHART_GMAX - p) / CHART_GRANGE) * (CHART_H - 1));
 
@@ -722,7 +1189,7 @@ setInterval(() => {
     if (transitioning) return;
     counterBorderAnim.tick++;
     drawKeyboard();
-    if (typeof gameActive !== 'undefined' && gameActive) {
+    if (gameActive) {
         scanFrame++;
         if (scanFrame % 4 === 0) {
             scanCol++;
@@ -736,19 +1203,33 @@ setInterval(() => {
     } else {
         renderer.renderKeyboardOnly();
     }
-}, 80);
+}, TICK_GAME_MS);
 
 // ─── INTRO FLOW ───────────────────────────────────────────────────────────────
 async function showIntroScreen() {
-    // Scroll in the broadway screen then wait for Enter
-    const { g: firstG, col: firstCol } = buildBroadwayGrid(0);
     drawKeyboard();
-    transitioning = true;
-    await animateScrollDown(lastIntroGrid, firstG, lastIntroColors, firstCol);
-    transitioning = false;
-    lastIntroGrid   = firstG;
-    lastIntroColors = firstCol;
     broadwayTick = ssTick = ringTick = 0;
+    transitioning = true;
+
+    // Advance broadway ticks independently at broadway rate during the transition
+    const bwInterval = setInterval(() => {
+        broadwayTick++; ssTick++; ringTick++;
+    }, TICK_BROADWAY_MS);
+
+    // fromFn = blank black screen, toFn = live broadway — iris expands outward revealing broadway
+    const emptyG   = makeGrid();
+    const emptyCol = makeColorGrid();
+    const fromFn = () => ({ g: emptyG, col: emptyCol });
+    const toFn   = () => {
+        const res = buildBroadwayGrid(broadwayTick);
+        lastIntroGrid   = res.g;
+        lastIntroColors = res.col;
+        return res;
+    };
+
+    await animateRadialReveal(fromFn, toFn, TICK_SCROLL_MS, false);
+    clearInterval(bwInterval);
+    transitioning = false;
 
     broadwayInterval = setInterval(() => {
         if (transitioning) return;
@@ -759,17 +1240,34 @@ async function showIntroScreen() {
         const fullGrid  = [...g.slice(0, KB_TOP), ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(' '))];
         const fullColor = [...col.slice(0, KB_TOP), ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(null))];
         renderer.render(fullGrid, fullColor, false);
-    }, 120);
+    }, TICK_BROADWAY_MS);
 
     waitingForEnter = true;
 }
 
 async function startGameplay() {
+    simulateAllPrices();
+    clearInterval(broadwayInterval);
+    broadwayInterval = null;
+
+    // Snapshot the game grid once — it doesn't animate yet
     const { g: gameG, col: gameCol } = buildGameGrid();
-    await animateScrollDown(lastIntroGrid, gameG, lastIntroColors, gameCol);
+
+    // Advance broadway ticks during the transition at broadway rate
+    const bwInterval = setInterval(() => {
+        broadwayTick++; ssTick++; ringTick++;
+    }, TICK_BROADWAY_MS);
+
+    const fromFn = () => buildBroadwayGrid(broadwayTick);
+    const toFn   = () => ({ g: gameG, col: gameCol });
+
+    await animateRadialReveal(fromFn, toFn);
+    clearInterval(bwInterval);
     transitioning = false;
     gameActive = true;
-    startRound();
+    scanCol = 0;
+    scanFrame = 0;
+    updateGameDisplay();
 }
 
 // ─── GAME GRID BUILDER ────────────────────────────────────────────────────────
@@ -823,15 +1321,14 @@ function buildGameGrid() {
     fillRow(g, sepR0, '─');
     for (let c = 0; c < COLS; c++) col[sepR0][c] = '#444444';
 
-    // ── Top: separator only (no horizontal progress bar) ──
-    fillRow(g, 0, '─');
-    for (let c = 0; c < COLS; c++) col[0][c] = '#444444';
+    // ── Top: title row 1, separator row 2 ──
+    writeCenter(g, 1, 'STOCK MARKET');
+    for (let c = 0; c < COLS; c++) col[1][c] = '#ffffff';
+    fillRow(g, 2, '─');
+    for (let c = 0; c < COLS; c++) col[2][c] = '#444444';
 
-    fillRow(g, 1, '─');
-    for (let c = 0; c < COLS; c++) col[1][c] = '#444444';
-
-    // ── Chart fills rows 2 .. sepR0-1 ──
-    const chartTop = 2;
+    // ── Chart fills rows 3 .. sepR0-1 ──
+    const chartTop = 3;
     const chartH   = sepR0 - chartTop;
 
     // Fixed display range matching the price bounds used in simulateAllPrices
@@ -874,15 +1371,15 @@ function buildGameGrid() {
         if (player.unlocked.has('red'))    plotWave(STOCKS.red.history,    '#cc2222');
         if (player.unlocked.has('green'))  plotWave(STOCKS.green.history,  '#22cc22');
     } else {
-        // Decorative static preview — one wave per colour in its quadrant
+        // Decorative static preview — one wave per unlocked colour
         const amp  = Math.floor(chartH / 2) - 1;
         const midR = chartTop + Math.floor(chartH / 2);
         const waves = [
-            { hex: '#22cc22', fn: (c) => Math.sin((c / COLS) * Math.PI * 4) },
-            { hex: '#cc2222', fn: (c) => ((c / COLS * 4) % 1) * 2 - 1 },
-            { hex: '#2255cc', fn: (c) => (Math.floor(c / COLS * 8) % 2) * 2 - 1 },
-            { hex: '#ccaa00', fn: (c) => (c / COLS) * 2 - 1 },
-        ];
+            { key: 'green',  hex: '#22cc22', fn: (c) => Math.sin((c / COLS) * Math.PI * 4) },
+            { key: 'red',    hex: '#cc2222', fn: (c) => ((c / COLS * 4) % 1) * 2 - 1 },
+            { key: 'blue',   hex: '#2255cc', fn: (c) => (Math.floor(c / COLS * 8) % 2) * 2 - 1 },
+            { key: 'yellow', hex: '#ccaa00', fn: (c) => (c / COLS) * 2 - 1 },
+        ].filter(({ key }) => player.unlocked.has(key));
         waves.forEach(({ hex, fn }) => {
             for (let c = 0; c < COLS; c++) {
                 const r    = midR + Math.round(amp * fn(c));
@@ -896,7 +1393,7 @@ function buildGameGrid() {
 
     // ── Vertical scanning bar: sweeps left→right across the chart ──
     if (allPrices.length > 4) {
-        const barTop    = 0;
+        const barTop    = 1;
         const barBottom = sepR0 - 1;
 
         // 1-wide solid white bar
@@ -932,7 +1429,7 @@ function buildGameGrid() {
 
             const f = imp.frames; // 5 down to 1
             const brightHex = imp.hex;
-            const dimHex = imp.hex + '99';
+            const dimHex = imp.hex + '99'; // assumes imp.hex is always a 6-digit #rrggbb string
 
             // Frame 5: massive explosion — 5-wide, 5-tall cross + diagonals
             // Frame 4: shrinks to 3-wide cross + diagonals
@@ -1134,7 +1631,8 @@ function buildUpgradeGrid() {
     writeCenter(g, 4, '── NEW STOCKS ──');
     for (let c = 0; c < COLS; c++) col[4][c] = '#555555';
 
-    const stockBoxR1 = 5, stockBoxR2 = 10;
+    const stockBoxR1 = 5, stockBoxR2 = 9;
+    const stockMidR  = Math.floor((stockBoxR1 + stockBoxR2) / 2);
     const STOCK_COLS = [
         { c1: 0,  c2: 8  },
         { c1: 9,  c2: 19 },
@@ -1146,16 +1644,14 @@ function buildUpgradeGrid() {
         { key: 'blue',   bright: '#88aaff', label: 'BLUE',   costLabel: '$1K'   },
         { key: 'yellow', bright: '#ffee88', label: 'YELLOW', costLabel: '$10K'  },
     ];
-    const stockMidR = Math.floor((stockBoxR1 + stockBoxR2) / 2);
 
-    // Q-BUY button
+    // Q-BUY button — leftmost column, same style as other upgrade boxes
     const qFlashing  = keysHeld.has('q') || keysHeld.has('Q');
     const qAvailable = canAfford;
     const qBorder = qFlashing && qAvailable ? '#88ff88' : qAvailable ? '#22cc22' : '#333333';
     const qBg     = qFlashing && qAvailable ? '#003a00' : qAvailable ? '#001800' : '#111111';
     drawBox(stockBoxR1, stockBoxR2, STOCK_COLS[0].c1, STOCK_COLS[0].c2, qBorder, qBg);
-    writeCol(stockMidR - 1, STOCK_COLS[0].c1, STOCK_COLS[0].c2, 'Q', qAvailable ? qBorder : '#333333');
-    writeCol(stockMidR,     STOCK_COLS[0].c1, STOCK_COLS[0].c2, 'BUY', qAvailable ? qBorder : '#333333');
+    writeCol(stockMidR, STOCK_COLS[0].c1, STOCK_COLS[0].c2, 'Q-BUY', qAvailable ? qBorder : '#333333');
 
     // Stock unlock boxes
     UPGRADE_LIST.forEach(({ key, bright, label, costLabel }, i) => {
@@ -1166,19 +1662,19 @@ function buildUpgradeGrid() {
         const borderCol = owned ? bright : affordable ? '#555555' : '#333333';
         drawBox(stockBoxR1, stockBoxR2, c1, c2, borderCol, '#0a0a0a');
         if (owned) {
-            writeCol(stockMidR - 1, c1, c2, '★', bright);
-            writeCol(stockMidR,     c1, c2, label, bright);
+            writeCol(stockMidR - 1, c1, c2, '★',        bright);
+            writeCol(stockMidR,     c1, c2, label,      bright);
             writeCol(stockMidR + 1, c1, c2, 'UNLOCKED', bright);
         } else {
-            writeCol(stockMidR - 1, c1, c2, label, affordable ? '#888888' : '#444444');
-            writeCol(stockMidR,     c1, c2, costLabel, affordable ? '#aaaaaa' : '#555555');
-            writeCol(stockMidR + 1, c1, c2, 'LOCKED', '#2a2a2a');
+            writeCol(stockMidR,     c1, c2, label,     affordable ? '#888888' : '#444444');
+            writeCol(stockMidR + 1, c1, c2, costLabel, affordable ? '#aaaaaa' : '#555555');
+            // No LOCKED text — grayed out is sufficient
         }
     });
 
     // ── ROW 2: Multiplier upgrades (unlocked when red is unlocked) ──
     if (multUnlocked) {
-        const multBoxR1 = 13, multBoxR2 = 18;
+        const multBoxR1 = 13, multBoxR2 = 17;
         const multMidR  = Math.floor((multBoxR1 + multBoxR2) / 2);
 
         writeCenter(g, multBoxR1 - 1, '── BUY/SELL MULTIPLIER ──');
@@ -1201,12 +1697,12 @@ function buildUpgradeGrid() {
         const nextCostW  = nextMult ? MULTIPLIER_COSTS[nextMult] : null;
         const wCanAfford = nextCostW !== null && player.cash >= nextCostW;
 
+        // W-BUY button — leftmost column, same style as multiplier boxes
         const wFlashing = keysHeld.has('w') || keysHeld.has('W');
         const wBorder = wFlashing && wCanAfford ? '#ff8888' : wCanAfford ? '#cc2222' : '#333333';
         const wBg     = wFlashing && wCanAfford ? '#3a0000' : wCanAfford ? '#180000' : '#111111';
         drawBox(multBoxR1, multBoxR2, MULT_COLS[0].c1, MULT_COLS[0].c2, wBorder, wBg);
-        writeCol(multMidR - 1, MULT_COLS[0].c1, MULT_COLS[0].c2, 'W', wCanAfford ? wBorder : '#333333');
-        writeCol(multMidR,     MULT_COLS[0].c1, MULT_COLS[0].c2, 'BUY', wCanAfford ? wBorder : '#333333');
+        writeCol(multMidR, MULT_COLS[0].c1, MULT_COLS[0].c2, 'W-BUY', wCanAfford ? wBorder : '#333333');
 
         MULT_LIST.forEach(({ mult, costLabel }, i) => {
             const { c1, c2 } = MULT_COLS[i + 1];
@@ -1216,29 +1712,32 @@ function buildUpgradeGrid() {
             const borderCol  = owned ? '#ff8888' : affordable ? '#555555' : '#333333';
             drawBox(multBoxR1, multBoxR2, c1, c2, borderCol, '#0a0a0a');
             if (owned) {
-                writeCol(multMidR - 1, c1, c2, '★', '#ff8888');
+                writeCol(multMidR - 1, c1, c2, '★',      '#ff8888');
                 writeCol(multMidR,     c1, c2, `${mult}x`, '#ff8888');
-                writeCol(multMidR + 1, c1, c2, 'ACTIVE', '#ff8888');
+                writeCol(multMidR + 1, c1, c2, 'ACTIVE',  '#ff8888');
             } else {
-                writeCol(multMidR - 1, c1, c2, `${mult}x`, affordable ? '#888888' : '#444444');
-                writeCol(multMidR,     c1, c2, costLabel, affordable ? '#aaaaaa' : '#555555');
-                writeCol(multMidR + 1, c1, c2, 'LOCKED', '#2a2a2a');
+                writeCol(multMidR,     c1, c2, `${mult}x`, affordable ? '#888888' : '#444444');
+                writeCol(multMidR + 1, c1, c2, costLabel,  affordable ? '#aaaaaa' : '#555555');
+                // No LOCKED text — grayed out is sufficient
             }
         });
     }
 
-    writeCenter(g, KB_TOP - 1, 'PRESS ENTER TO CONTINUE');
-    for (let c = 0; c < COLS; c++) col[KB_TOP-1][c] = '#666666';
+    writeCenter(g, 31, 'PRESS ENTER TO CONTINUE');
+    for (let c = 0; c < COLS; c++) col[31][c] = '#666666';
+
+    for (let c = 0; c < COLS; c++) { g[32][c] = (c % 2 === 0) ? '─' : ' '; col[32][c] = '#333333'; }
 
     return { g, col };
 }
 
-async function showUpgradeScreen(fromGrid, fromColors) {
-    const { g: upG, col: upCol } = buildUpgradeGrid();
+async function showUpgradeScreen() {
+    const { g: socialG, col: socialCol } = buildSocialGrid();
+    const { g: upG,     col: upCol     } = buildUpgradeGrid();
     transitioning = true;
-    await animateScrollDown(fromGrid, upG, fromColors, upCol);
+    await randomTransition(socialG, upG, socialCol, upCol);
     transitioning = false;
-    const full = [...upG.slice(0, KB_TOP), ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(' '))];
+    const full  = [...upG.slice(0, KB_TOP),  ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(' '))];
     const fullC = [...upCol.slice(0, KB_TOP), ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(null))];
     renderer.render(full, fullC, false);
     waitingForUpgrade = true;
@@ -1279,15 +1778,13 @@ function handleUpgradeKey(k) {
 
 async function handleUpgradeEnter() {
     waitingForUpgrade = false;
-    const { g, col } = buildUpgradeGrid();
     Object.assign(player, { startingCash: player.cash, green: 0, red: 0, blue: 0, yellow: 0 });
+    simulateAllPrices();
     gameActive = true;
-    // scroll straight into the game
-    const upFull = [...g.slice(0, KB_TOP), ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(' '))];
-    const upFullC = [...col.slice(0, KB_TOP), ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(null))];
+    const { g: upG,   col: upCol   } = buildUpgradeGrid();
     const { g: gameG, col: gameCol } = buildGameGrid();
     transitioning = true;
-    await animateScrollDown(upFull, gameG, upFullC, gameCol);
+    await randomTransition(upG, gameG, upCol, gameCol);
     transitioning = false;
     startRound();
 }
@@ -1305,45 +1802,185 @@ async function endRound() {
         player[c] = 0;
     });
 
-    const resultsLines = [
-        'ROUND OVER', '',
-        `Profit: $${profit.toFixed(2)}`,
-        `(${((profit / player.startingCash) * 100).toFixed(1)}%)`
-    ];
+    // Store profit for buildSocialGrid to embed
+    lastProfit        = profit;
+    lastStartingCash  = player.startingCash;
 
+    // Random transition into the round-over / social screen
     const { g: gameG, col: gameCol } = buildGameGrid();
-    const toGrid = makeGrid();
-    resultsLines.forEach((line, i) => writeCenter(toGrid, i + 1, line));
-    writeCenter(toGrid, KB_TOP - 1, 'PRESS ENTER TO CONTINUE');
+    const { g: socialG, col: socialCol } = buildSocialGrid();
 
     transitioning = true;
-    await animateScrollDown(gameG, toGrid, gameCol, null);
+    await randomTransition(gameG, socialG, gameCol, socialCol);
     transitioning = false;
-    const full = [...toGrid.slice(0, KB_TOP), ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(' '))];
-    renderer.render(full, null, false);
+    const full  = [...socialG.slice(0, KB_TOP),  ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(' '))];
+    const fullC = [...socialCol.slice(0, KB_TOP), ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(null))];
+    renderer.render(full, fullC, false);
+    showSocialOverlay();
     waitingForResults = true;
 }
 
 function handleResultsEnter() {
     waitingForResults = false;
-    const fromGrid = makeGrid();
-    const fromCol  = makeColorGrid();
-    showUpgradeScreen(fromGrid, fromCol);
+    hideSocialOverlay();
+    showUpgradeScreen();
 }
 
-// ─── TRADING ──────────────────────────────────────────────────────────────────
+// ─── SOCIAL SCREEN (grid-rendered) ────────────────────────────────────────────
+// All visuals are drawn into the content grid. Clickability comes from thin
+// invisible <a> elements positioned precisely over each platform's 3-row band.
+
+const SOCIAL_PLATFORMS = [
+    // [id, gridRow, color, logoTop, logoMid, logoBot, name, handle]
+    ['fb', 14,  '#6aabff', '╔═══╗', '║ F ║', '╚═══╝', 'FACEBOOK',    'facebook.com/ballrollergames'],
+    ['li', 17,  '#5599ee', '╔═══╗', '║in ║', '╚═══╝', 'LINKEDIN',    'linkedin.com/ballroller-games'],
+    ['ig', 20,  '#ff88cc', '╔═°═╗', '║(○)║', '╚═══╝', 'INSTAGRAM',   'instagram.com/ballrollergames'],
+    ['yt', 23,  '#ff5555', '╔═══╗', '║ ▶ ║', '╚═══╝', 'YOUTUBE',     'youtube.com/@BallRoller-Games'],
+    ['x',  26,  '#aaaaaa', '╔═══╗', '║ ╳ ║', '╚═══╝', 'X / TWITTER', 'x.com/ballrollergames'],
+];
+const SOCIAL_LOGO_C1 = 2;  // logo box left col
+const SOCIAL_TEXT_C  = 8;  // platform name / handle start col
+let socialHovered = null;   // currently hovered platform id, or null
+
+function buildSocialGrid() {
+    const g   = makeGrid();
+    const col = makeColorGrid();
+
+    // Row 1: ROUND OVER title
+    writeCenter(g, 1, 'ROUND OVER');
+    for (let c = 0; c < COLS; c++) col[1][c] = '#ffffff';
+
+    // Row 2: separator
+    fillRow(g, 2, '─');
+    for (let c = 0; c < COLS; c++) col[2][c] = '#444444';
+
+    // Rows 4-5: profit results
+    if (lastProfit !== undefined) {
+        const profitLine = `Profit: $${lastProfit.toFixed(2)}`;
+        const pctLine    = `(${((lastProfit / lastStartingCash) * 100).toFixed(1)}%)`;
+        const profitColor = lastProfit >= 0 ? '#aaffaa' : '#ff8888';
+        writeCenter(g, 4, profitLine);
+        writeCenter(g, 5, pctLine);
+        [4, 5].forEach(r => { for (let c = 0; c < COLS; c++) { if (g[r][c] !== ' ') col[r][c] = profitColor; } });
+    }
+
+    // Row 12: header
+    writeCenter(g, 12, '─── FOLLOW & SUBSCRIBE ───');
+    for (let c = 0; c < COLS; c++) col[12][c] = '#aaffaa';
+
+    // Platform entries
+    SOCIAL_PLATFORMS.forEach(([id, r, baseCol, logoTop, logoMid, logoBot, name, handle]) => {
+        const hovered  = (socialHovered === id);
+        const glowCol  = hovered ? '#ffffff' : baseCol;
+        const dimCol   = hovered ? '#dddddd' : baseCol + '99'; // slightly dim when not hovered
+
+        // Logo box — 3 rows × 5 cols starting at SOCIAL_LOGO_C1
+        const logoChars = [logoTop, logoMid, logoBot];
+        logoChars.forEach((line, dr) => {
+            line.split('').forEach((ch, dc) => {
+                const gc = SOCIAL_LOGO_C1 + dc;
+                const gr = r + dr;
+                if (gr < KB_TOP && gc < COLS) {
+                    g[gr][gc]   = ch;
+                    col[gr][gc] = glowCol;
+                }
+            });
+        });
+
+        // Platform name on the middle row
+        const midR = r + 1;
+        name.split('').forEach((ch, i) => {
+            const gc = SOCIAL_TEXT_C + i;
+            if (gc < COLS) { g[midR][gc] = ch; col[midR][gc] = glowCol; }
+        });
+
+        // Handle on the bottom row
+        handle.split('').forEach((ch, i) => {
+            const gc = SOCIAL_TEXT_C + i;
+            if (gc < COLS) { g[r + 2][gc] = ch; col[r + 2][gc] = hovered ? '#cccccc' : '#666666'; }
+        });
+    });
+
+    // Row 31: PRESS ENTER TO CONTINUE
+    writeCenter(g, 31, 'PRESS ENTER TO CONTINUE');
+    for (let c = 0; c < COLS; c++) col[31][c] = '#666666';
+
+    // Row 32: dashed line below PRESS ENTER
+    for (let c = 0; c < COLS; c++) { g[32][c] = (c % 2 === 0) ? '─' : ' '; col[32][c] = '#333333'; }
+
+    return { g, col };
+}
+
+// Position the invisible <a> link overlays over their respective grid rows
+function positionSocialLinks() {
+    const wrap = document.getElementById('consoleWrap');
+    const rect = wrap.getBoundingClientRect();
+    const rowH  = rect.height / ROWS;
+    const charW = rect.width  / COLS;
+
+    SOCIAL_PLATFORMS.forEach(([id, r]) => {
+        const el = document.getElementById('slink-' + id);
+        if (!el) return;
+        // Cover the full 3-row band (logo + name + handle), full console width
+        el.style.top    = `${rect.top  + window.scrollY + r * rowH}px`;
+        el.style.left   = `${rect.left + window.scrollX}px`;
+        el.style.width  = `${rect.width}px`;
+        el.style.height = `${rowH * 3}px`;
+    });
+}
+
+function showSocialOverlay() {
+    positionSocialLinks();
+    SOCIAL_PLATFORMS.forEach(([id]) => {
+        const el = document.getElementById('slink-' + id);
+        if (el) el.style.display = 'block';
+    });
+}
+function hideSocialOverlay() {
+    SOCIAL_PLATFORMS.forEach(([id]) => {
+        const el = document.getElementById('slink-' + id);
+        if (el) el.style.display = 'none';
+    });
+    socialHovered = null;
+}
+
+// Hover tracking: re-render the social grid with highlight when platform is hovered
+SOCIAL_PLATFORMS.forEach(([id]) => {
+    const el = document.getElementById('slink-' + id);
+    if (!el) return;
+    el.addEventListener('mouseenter', () => {
+        socialHovered = id;
+        renderSocialScreen();
+    });
+    el.addEventListener('mouseleave', () => {
+        socialHovered = null;
+        renderSocialScreen();
+    });
+});
+
+function renderSocialScreen() {
+    const { g, col } = buildSocialGrid();
+    const full  = [...g.slice(0, KB_TOP),   ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(' '))];
+    const fullC = [...col.slice(0, KB_TOP),  ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(null))];
+    renderer.render(full, fullC, false);
+}
+
+window.addEventListener('resize', () => {
+    if (document.getElementById('slink-fb')?.style.display === 'block') positionSocialLinks();
+});
 const KEY_COLOR = { q: 'green', w: 'red', e: 'blue', r: 'yellow', a: 'green', s: 'red', d: 'blue', f: 'yellow' };
 const BUY_KEYS  = new Set(['q','w','e','r']);
 const SELL_KEYS = new Set(['a','s','d','f']);
 
 function submitCommand() {
-    if (waitingForUpgrade) { handleUpgradeEnter(); return; }
-    if (waitingForResults) { handleResultsEnter(); return; }
+    if (waitingForUpgrade) { sfxEnter(); handleUpgradeEnter(); return; }
+    if (waitingForResults) { sfxEnter(); handleResultsEnter(); return; }
     if (waitingForEnter) {
         waitingForEnter = false;
         transitioning = true;
         clearInterval(broadwayInterval);
         broadwayInterval = null;
+        sfxEnter();
         startGameplay();
     }
 }
@@ -1402,12 +2039,14 @@ document.addEventListener('keydown', e => {
             player.cash -= total;
             player[color] += qty;
             recordImpact(true);
+            sfxBuy();
             updateGameDisplay();
         } else if (player.cash >= price) {
             const canBuy = Math.floor(player.cash / price);
             player.cash -= price * canBuy;
             player[color] += canBuy;
             recordImpact(true);
+            sfxBuy();
             updateGameDisplay();
         }
     } else {
@@ -1417,6 +2056,7 @@ document.addEventListener('keydown', e => {
             player.cash += price * qty;
             player[color] -= qty;
             recordImpact(false);
+            sfxSell();
             updateGameDisplay();
         }
     }
@@ -1425,17 +2065,45 @@ document.addEventListener('keydown', e => {
 // ─── CUSTOM CURSOR ────────────────────────────────────────────────────────────
 const cursorEl  = document.getElementById('cursor');
 const cursorSvg = document.getElementById('cursorSvg');
-function setCursorVariant(onButton) {
-    cursorEl.style.width = '24px'; cursorEl.style.height = '24px';
+
+// Pre-build both cursor variants once — avoids DOM parse + repaint on every mousemove
+(function initCursorSvg() {
+    cursorEl.style.width  = '24px';
+    cursorEl.style.height = '24px';
     cursorEl.style.transform = 'translate(-12px,-12px)';
-    cursorSvg.setAttribute('width','24'); cursorSvg.setAttribute('height','24');
-    cursorSvg.setAttribute('viewBox','0 0 24 24');
-    const glow = id => `<defs><filter id='${id}' x='-50%' y='-50%' width='200%' height='200%'><feGaussianBlur stdDeviation='1.2' result='b'/><feMerge><feMergeNode in='b'/><feMergeNode in='SourceGraphic'/></feMerge></filter></defs>`;
-    if (onButton) {
-        cursorSvg.innerHTML = glow('gc') + `<g filter='url(#gc)'><line x1='12' y1='0' x2='12' y2='8' stroke='#00ff88' stroke-width='1.5' stroke-linecap='round'/><line x1='12' y1='16' x2='12' y2='24' stroke='#00ff88' stroke-width='1.5' stroke-linecap='round'/><line x1='0' y1='12' x2='8' y2='12' stroke='#00ff88' stroke-width='1.5' stroke-linecap='round'/><line x1='16' y1='12' x2='24' y2='12' stroke='#00ff88' stroke-width='1.5' stroke-linecap='round'/><rect x='10' y='10' width='4' height='4' fill='#00ff88'/><polyline points='9,4 9,9 4,9' fill='none' stroke='#00ff88' stroke-width='1' opacity='0.6'/><polyline points='15,4 15,9 20,9' fill='none' stroke='#00ff88' stroke-width='1' opacity='0.6'/><polyline points='9,20 9,15 4,15' fill='none' stroke='#00ff88' stroke-width='1' opacity='0.6'/><polyline points='15,20 15,15 20,15' fill='none' stroke='#00ff88' stroke-width='1' opacity='0.6'/></g>`;
-    } else {
-        cursorSvg.innerHTML = glow('gn') + `<g filter='url(#gn)'><polyline points='9,4 9,9 4,9' fill='none' stroke='#00ff88' stroke-width='1' opacity='0.6'/><polyline points='15,4 15,9 20,9' fill='none' stroke='#00ff88' stroke-width='1' opacity='0.6'/><polyline points='9,20 9,15 4,15' fill='none' stroke='#00ff88' stroke-width='1' opacity='0.6'/><polyline points='15,20 15,15 20,15' fill='none' stroke='#00ff88' stroke-width='1' opacity='0.6'/></g>`;
-    }
+    cursorSvg.setAttribute('width',   '24');
+    cursorSvg.setAttribute('height',  '24');
+    cursorSvg.setAttribute('viewBox', '0 0 24 24');
+})();
+
+const _CURSOR_GLOW_DEF = id =>
+    `<defs><filter id='${id}' x='-50%' y='-50%' width='200%' height='200%'>` +
+    `<feGaussianBlur stdDeviation='1.2' result='b'/><feMerge>` +
+    `<feMergeNode in='b'/><feMergeNode in='SourceGraphic'/></feMerge></filter></defs>`;
+
+const _CURSOR_CORNERS =
+    `<polyline points='9,4 9,9 4,9'   fill='none' stroke='#00ff88' stroke-width='1' opacity='0.6'/>` +
+    `<polyline points='15,4 15,9 20,9' fill='none' stroke='#00ff88' stroke-width='1' opacity='0.6'/>` +
+    `<polyline points='9,20 9,15 4,15' fill='none' stroke='#00ff88' stroke-width='1' opacity='0.6'/>` +
+    `<polyline points='15,20 15,15 20,15' fill='none' stroke='#00ff88' stroke-width='1' opacity='0.6'/>`;
+
+const CURSOR_SVG_NORMAL = _CURSOR_GLOW_DEF('gn') + `<g filter='url(#gn)'>${_CURSOR_CORNERS}</g>`;
+const CURSOR_SVG_BUTTON =
+    _CURSOR_GLOW_DEF('gc') +
+    `<g filter='url(#gc)'>` +
+    `<line x1='12' y1='0'  x2='12' y2='8'  stroke='#00ff88' stroke-width='1.5' stroke-linecap='round'/>` +
+    `<line x1='12' y1='16' x2='12' y2='24' stroke='#00ff88' stroke-width='1.5' stroke-linecap='round'/>` +
+    `<line x1='0'  y1='12' x2='8'  y2='12' stroke='#00ff88' stroke-width='1.5' stroke-linecap='round'/>` +
+    `<line x1='16' y1='12' x2='24' y2='12' stroke='#00ff88' stroke-width='1.5' stroke-linecap='round'/>` +
+    `<rect x='10' y='10' width='4' height='4' fill='#00ff88'/>` +
+    _CURSOR_CORNERS +
+    `</g>`;
+
+let _cursorOnButton = null; // track last state to avoid redundant DOM writes
+function setCursorVariant(onButton) {
+    if (onButton === _cursorOnButton) return; // no change — skip DOM update
+    _cursorOnButton = onButton;
+    cursorSvg.innerHTML = onButton ? CURSOR_SVG_BUTTON : CURSOR_SVG_NORMAL;
 }
 setCursorVariant(false);
 function isOverButton(e) {
@@ -1454,10 +2122,473 @@ document.addEventListener('mousemove', e => {
 document.addEventListener('mouseleave', () => { cursorEl.style.opacity = '0'; });
 document.addEventListener('mouseenter', () => { cursorEl.style.opacity = '1'; });
 
+// ─── CHIP MUSIC ENGINE ────────────────────────────────────────────────────────
+// MIDI is loaded at runtime from SuperSeller8086.mid in the same folder.
+// Track 0: Bass      (ch0  — square wave, +1 oct)
+// Track 1: Guitar    (ch1  — detuned squares)
+// Track 2: Drums     (ch9  — 35=kick, 40=snare, 42=hihat)
+// Track 3: Pop Synth (ch2  — triangle lead melody)
+
+let CHIP_MIDI = null; // populated by loadMidi()
+
+function parseMidi(buffer) {
+    const u8 = new Uint8Array(buffer);
+    let pos = 0;
+
+    const readU16 = () => { const v = (u8[pos] << 8) | u8[pos+1]; pos += 2; return v; };
+    const readU32 = () => { const v = (u8[pos]<<24)|(u8[pos+1]<<16)|(u8[pos+2]<<8)|u8[pos+3]; pos += 4; return v >>> 0; };
+    const readVarLen = () => {
+        let v = 0;
+        for (let i = 0; i < 4; i++) { const b = u8[pos++]; v = (v << 7) | (b & 0x7f); if (!(b & 0x80)) break; }
+        return v;
+    };
+
+    pos += 4; // MThd
+    pos += 4; // header length
+    const fmt     = readU16();
+    const ntracks = readU16();
+    const tpb     = readU16();
+
+    let tempo = 500000;
+    const allTracks = [];
+
+    for (let t = 0; t < ntracks; t++) {
+        pos += 4; // MTrk
+        const tlen = readU32();
+        const end  = pos + tlen;
+        const events = [];
+        let absTick = 0, running = 0;
+
+        while (pos < end) {
+            absTick += readVarLen();
+            let b = u8[pos];
+            if (b === 0xff) {                          // meta
+                pos++;
+                const mtype = u8[pos++];
+                const mlen  = readVarLen();
+                if (mtype === 0x51 && mlen === 3) {
+                    tempo = ((u8[pos] << 16) | (u8[pos+1] << 8) | u8[pos+2]) >>> 0;
+                }
+                pos += mlen;
+            } else if (b === 0xf0 || b === 0xf7) {    // sysex
+                pos++;
+                pos += readVarLen();
+            } else {
+                if (b & 0x80) { running = b; pos++; }
+                const status = running & 0xf0;
+                const ch     = running & 0x0f;
+                if (status === 0x90) {
+                    const note = u8[pos++], vel = u8[pos++];
+                    events.push(vel > 0 ? [absTick,'on',ch,note,vel] : [absTick,'off',ch,note]);
+                } else if (status === 0x80) {
+                    const note = u8[pos++]; pos++;
+                    events.push([absTick,'off',ch,note]);
+                } else if (status === 0xc0 || status === 0xd0) { pos++; }
+                else if (status === 0xa0 || status === 0xb0 || status === 0xe0) { pos += 2; }
+                else { pos++; }
+            }
+        }
+        pos = end;
+        allTracks.push(events);
+    }
+
+    // Split into per-channel tracks (engine expects one array per synth voice)
+    // Channels present: 0=bass, 1=guitar, 9=drums, 2=synth
+    const chOrder = [0, 1, 9, 2];
+    const byChannel = {};
+    allTracks.forEach(evs => evs.forEach(ev => {
+        const ch = ev[2];
+        if (!byChannel[ch]) byChannel[ch] = [];
+        byChannel[ch].push(ev);
+    }));
+    const tracks = chOrder.map(ch => (byChannel[ch] || []).sort((a,b) => a[0]-b[0]));
+
+    const totalTicks = Math.max(...tracks.flat().map(e => e[0]));
+    return { tpb, tempo, totalTicks, tracks };
+}
+
+async function loadMidi() {
+    const resp = await fetch('SuperSeller8086.mid');
+    if (!resp.ok) throw new Error(`Failed to load MIDI: ${resp.status}`);
+    const buf = await resp.arrayBuffer();
+    CHIP_MIDI = parseMidi(buf);
+    // 1-bar intro = tpb * 4 ticks
+    CHIP_MIDI.introEnd  = CHIP_MIDI.tpb * 4;
+    CHIP_MIDI.loopStart = CHIP_MIDI.tpb * 4;
+    CHIP_MIDI.loopEnd   = CHIP_MIDI.totalTicks;
+}
+
+const CHIP_TOTAL_TICKS = null; // unused — CHIP_MIDI.loopEnd used directly
+
+// MIDI note → frequency
+function midiToHz(note) { return 440 * Math.pow(2, (note - 69) / 12); }
+
+let chipAudioCtx = null;
+let chipLoopTimeout = null;
+let chipStarted = false;
+
+function chipEnsureCtx() {
+    if (!chipAudioCtx) chipAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (chipAudioCtx.state === 'suspended') chipAudioCtx.resume();
+}
+
+// Separate gain nodes so SFX don't duck the music.
+// Drums get their own bus so they can be mixed independently of pitched voices.
+let chipMasterGain = null;
+let chipDrumGain   = null;
+let chipSfxGain    = null;
+
+function chipGetMaster() {
+    chipEnsureCtx();
+    if (!chipMasterGain) {
+        chipMasterGain = chipAudioCtx.createGain();
+        chipMasterGain.gain.value = 0.13;  // pitched voices: bass + guitar + synth
+        chipMasterGain.connect(chipAudioCtx.destination);
+    }
+    return chipMasterGain;
+}
+function chipGetDrum() {
+    chipEnsureCtx();
+    if (!chipDrumGain) {
+        chipDrumGain = chipAudioCtx.createGain();
+        chipDrumGain.gain.value = 0.85;    // drums run nearly full — they need to hit hard
+        chipDrumGain.connect(chipAudioCtx.destination);
+    }
+    return chipDrumGain;
+}
+function chipGetSfx() {
+    chipEnsureCtx();
+    if (!chipSfxGain) {
+        chipSfxGain = chipAudioCtx.createGain();
+        chipSfxGain.gain.value = 0.5;
+        chipSfxGain.connect(chipAudioCtx.destination);
+    }
+    return chipSfxGain;
+}
+
+// ── Sound effects ─────────────────────────────────────────────────────────────
+
+// Enter / confirm: short ascending two-note chip blip
+function sfxEnter() {
+    chipEnsureCtx();
+    const ctx = chipAudioCtx;
+    const sfx = chipGetSfx();
+    const now = ctx.currentTime;
+    [[523, 0, 0.07], [784, 0.07, 0.12]].forEach(([freq, delay, dur]) => {
+        const osc = ctx.createOscillator();
+        const g   = ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.value = freq;
+        g.gain.setValueAtTime(0.55, now + delay);
+        g.gain.linearRampToValueAtTime(0, now + delay + dur);
+        osc.connect(g); g.connect(sfx);
+        osc.start(now + delay); osc.stop(now + delay + dur + 0.01);
+    });
+}
+
+// Buy: ascending chip arpeggio (C–E–G), bright and punchy
+function sfxBuy() {
+    chipEnsureCtx();
+    const ctx = chipAudioCtx;
+    const sfx = chipGetSfx();
+    const now = ctx.currentTime;
+    [[523, 0], [659, 0.055], [784, 0.11]].forEach(([freq, delay]) => {
+        const osc = ctx.createOscillator();
+        const g   = ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.value = freq;
+        osc.detune.setValueAtTime(12, now + delay);
+        osc.detune.linearRampToValueAtTime(0, now + delay + 0.04);
+        g.gain.setValueAtTime(0.5, now + delay);
+        g.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.12);
+        osc.connect(g); g.connect(sfx);
+        osc.start(now + delay); osc.stop(now + delay + 0.13);
+    });
+}
+
+// Sell: descending chip arpeggio (G–E–C), slightly softer
+function sfxSell() {
+    chipEnsureCtx();
+    const ctx = chipAudioCtx;
+    const sfx = chipGetSfx();
+    const now = ctx.currentTime;
+    [[784, 0], [659, 0.055], [523, 0.11]].forEach(([freq, delay]) => {
+        const osc = ctx.createOscillator();
+        const g   = ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.value = freq;
+        g.gain.setValueAtTime(0.45, now + delay);
+        g.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.12);
+        osc.connect(g); g.connect(sfx);
+        osc.start(now + delay); osc.stop(now + delay + 0.13);
+    });
+}
+
+// ── Music playback ────────────────────────────────────────────────────────────
+
+// Helper: schedule a single note-on/off pair of events for one track
+function chipScheduleTrack(events, startTime, secPerTick, noteOn, noteOff) {
+    const active = {};
+    events.forEach(ev => {
+        const t = startTime + ev[0] * secPerTick;
+        if (ev[1] === 'on') {
+            active[ev[3]] = noteOn(ev[3], ev[4], t);
+        } else {
+            if (active[ev[3]]) { noteOff(active[ev[3]], ev[3], t); delete active[ev[3]]; }
+        }
+    });
+}
+
+// Intro = 1 bar. Loop body = bar 1 onwards. Both derived from parsed MIDI.
+const CHIP_INTRO_END  = null; // set after loadMidi() → CHIP_MIDI.introEnd
+const CHIP_LOOP_START = null; // set after loadMidi() → CHIP_MIDI.loopStart
+const CHIP_LOOP_END   = null; // set after loadMidi() → CHIP_MIDI.loopEnd
+
+// Play a slice of the MIDI (fromTick inclusive, toTick exclusive), scheduled
+// to start at startTime. Returns the duration in seconds of that slice.
+function chipPlaySlice(startTime, fromTick, toTick) {
+    chipEnsureCtx();
+    const ctx    = chipAudioCtx;
+    const master = chipGetMaster();
+    const { tpb, tempo, tracks } = CHIP_MIDI;
+    const secPerTick = (tempo / 1000000) / tpb;
+
+    // Filter events within [fromTick, toTick) and re-zero their times.
+    // Also cap any note that starts inside the slice but whose note-off falls
+    // outside it (e.g. a bass note at tick 1440 with off at 1584 when the
+    // intro slice ends at 1536) — inject a synthetic off at the slice boundary
+    // so the note doesn't bleed into the next slice and cause buzzing.
+    const slice = (events) => {
+        const result = [];
+        const openNotes = {}; // note → true if a note-on has been seen with no matching off yet
+        events.forEach(ev => {
+            const tick = ev[0];
+            if (tick >= fromTick && tick < toTick) {
+                result.push([tick - fromTick, ...ev.slice(1)]);
+                if (ev[1] === 'on')  openNotes[ev[3]] = true;
+                if (ev[1] === 'off') delete openNotes[ev[3]];
+            }
+        });
+        // For any note still open at the slice boundary, inject a note-off at toTick-fromTick
+        const sliceLen = toTick - fromTick;
+        Object.keys(openNotes).forEach(noteStr => {
+            const note = parseInt(noteStr, 10);
+            result.push([sliceLen, 'off', events.find(e => e[3] === note)?.[2] ?? 0, note]);
+        });
+        result.sort((a, b) => a[0] - b[0]);
+        return result;
+    };
+
+    // ── Bass ─────────────────────────────────────────────────────────────────
+    chipScheduleTrack(slice(tracks[0]), startTime, secPerTick,
+        (note, vel, t) => {
+            const osc = ctx.createOscillator(); const g = ctx.createGain();
+            osc.type = 'square'; osc.frequency.value = midiToHz(note + 12);
+            osc.detune.setValueAtTime(8, t); osc.detune.linearRampToValueAtTime(0, t + 0.03);
+            g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.55, t + 0.008);
+            osc.connect(g); g.connect(master); osc.start(t); return { osc, g };
+        },
+        ({ osc, g }, note, t) => {
+            // Use the scheduled peak (0.55) not g.gain.value (which is 0 at schedule time)
+            g.gain.setValueAtTime(0.55, t); g.gain.linearRampToValueAtTime(0, t + 0.015);
+            osc.stop(t + 0.02);
+        }
+    );
+
+    // ── Guitar / chords ───────────────────────────────────────────────────────
+    chipScheduleTrack(slice(tracks[1]), startTime, secPerTick,
+        (note, vel, t) => {
+            return [0, 7].map(det => {
+                const osc = ctx.createOscillator(); const g = ctx.createGain();
+                osc.type = 'square'; osc.frequency.value = midiToHz(note + 12); osc.detune.value = det;
+                g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.22, t + 0.01);
+                osc.connect(g); g.connect(master); osc.start(t); return { osc, g };
+            });
+        },
+        (nodes, note, t) => nodes.forEach(({ osc, g }) => {
+            g.gain.setValueAtTime(0.22, t); g.gain.linearRampToValueAtTime(0, t + 0.04);
+            osc.stop(t + 0.05);
+        })
+    );
+
+    // ── Drums ─────────────────────────────────────────────────────────────────
+    // Routed to chipGetDrum() — a dedicated bus at 0.85 so hits cut through the mix.
+    const drum = chipGetDrum();
+    slice(tracks[2]).forEach(ev => {
+        if (ev[1] !== 'on') return;
+        const t = startTime + ev[0] * secPerTick; const note = ev[3];
+
+        if (note === 35) {
+            // ── KICK: pitched sine punch + sub thump + clicky transient ──
+            // Layer 1: fast pitch sweep (the "thump") — 200 Hz → 45 Hz in 80ms
+            const osc1 = ctx.createOscillator(); const g1 = ctx.createGain();
+            osc1.type = 'sine';
+            osc1.frequency.setValueAtTime(200, t);
+            osc1.frequency.exponentialRampToValueAtTime(45, t + 0.08);
+            g1.gain.setValueAtTime(1.0, t); g1.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+            osc1.connect(g1); g1.connect(drum); osc1.start(t); osc1.stop(t + 0.19);
+
+            // Layer 2: sub sine for low-end weight — stays at 50 Hz
+            const osc2 = ctx.createOscillator(); const g2 = ctx.createGain();
+            osc2.type = 'sine'; osc2.frequency.value = 50;
+            g2.gain.setValueAtTime(0.8, t); g2.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+            osc2.connect(g2); g2.connect(drum); osc2.start(t); osc2.stop(t + 0.23);
+
+            // Layer 3: very short noise burst for the click attack
+            const bsz3 = Math.ceil(ctx.sampleRate * 0.012);
+            const buf3 = ctx.createBuffer(1, bsz3, ctx.sampleRate);
+            const d3 = buf3.getChannelData(0); for (let i = 0; i < bsz3; i++) d3[i] = Math.random() * 2 - 1;
+            const src3 = ctx.createBufferSource(); src3.buffer = buf3;
+            const lpf3 = ctx.createBiquadFilter(); lpf3.type = 'lowpass'; lpf3.frequency.value = 3000;
+            const g3 = ctx.createGain();
+            g3.gain.setValueAtTime(0.6, t); g3.gain.exponentialRampToValueAtTime(0.001, t + 0.01);
+            src3.connect(lpf3); lpf3.connect(g3); g3.connect(drum); src3.start(t); src3.stop(t + 0.013);
+
+        } else if (note === 40) {
+            // ── SNARE: noise body tuned with a bandpass + tonal "crack" oscillator ──
+            // Layer 1: noise body — bandpass centred at 900 Hz, moderate Q to keep body + snap
+            const bsz = Math.ceil(ctx.sampleRate * 0.22);
+            const buf = ctx.createBuffer(1, bsz, ctx.sampleRate);
+            const d = buf.getChannelData(0); for (let i = 0; i < bsz; i++) d[i] = Math.random() * 2 - 1;
+            const src = ctx.createBufferSource(); src.buffer = buf;
+            const bpf = ctx.createBiquadFilter(); bpf.type = 'bandpass'; bpf.frequency.value = 900; bpf.Q.value = 1.2;
+            const g = ctx.createGain();
+            g.gain.setValueAtTime(1.0, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+            src.connect(bpf); bpf.connect(g); g.connect(drum); src.start(t); src.stop(t + 0.22);
+
+            // Layer 2: high-frequency sizzle for snare wire rattle
+            const bsz2 = Math.ceil(ctx.sampleRate * 0.12);
+            const buf2 = ctx.createBuffer(1, bsz2, ctx.sampleRate);
+            const d2 = buf2.getChannelData(0); for (let i = 0; i < bsz2; i++) d2[i] = Math.random() * 2 - 1;
+            const src2 = ctx.createBufferSource(); src2.buffer = buf2;
+            const hpf2 = ctx.createBiquadFilter(); hpf2.type = 'highpass'; hpf2.frequency.value = 4000;
+            const g2 = ctx.createGain();
+            g2.gain.setValueAtTime(0.55, t); g2.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+            src2.connect(hpf2); hpf2.connect(g2); g2.connect(drum); src2.start(t); src2.stop(t + 0.12);
+
+            // Layer 3: short tonal crack — square wave at 180 Hz for the chip "pop"
+            const osc3 = ctx.createOscillator(); const g3 = ctx.createGain();
+            osc3.type = 'square'; osc3.frequency.value = 180;
+            g3.gain.setValueAtTime(0.45, t); g3.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+            osc3.connect(g3); g3.connect(drum); osc3.start(t); osc3.stop(t + 0.045);
+
+        } else if (note === 42) {
+            // ── CLOSED HI-HAT: tight noise burst, HPF at 6kHz, fast decay ──
+            const bsz = Math.ceil(ctx.sampleRate * 0.08);
+            const buf = ctx.createBuffer(1, bsz, ctx.sampleRate);
+            const d = buf.getChannelData(0); for (let i = 0; i < bsz; i++) d[i] = Math.random() * 2 - 1;
+            const src = ctx.createBufferSource(); src.buffer = buf;
+            // HPF strips everything below 6kHz — gives that bright, crisp hi-hat zing
+            const hpf = ctx.createBiquadFilter(); hpf.type = 'highpass'; hpf.frequency.value = 6000;
+            // Shelf to boost the very top air
+            const shelf = ctx.createBiquadFilter(); shelf.type = 'highshelf'; shelf.frequency.value = 10000; shelf.gain.value = 6;
+            const g = ctx.createGain();
+            g.gain.setValueAtTime(0.7, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+            src.connect(hpf); hpf.connect(shelf); shelf.connect(g); g.connect(drum);
+            src.start(t); src.stop(t + 0.08);
+        }
+    });
+
+    // ── Synth lead ────────────────────────────────────────────────────────────
+    chipScheduleTrack(slice(tracks[3]), startTime, secPerTick,
+        (note, vel, t) => {
+            const osc = ctx.createOscillator(); const g = ctx.createGain();
+            osc.type = 'triangle'; osc.frequency.value = midiToHz(note + 12);
+            g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.38, t + 0.012);
+            osc.connect(g); g.connect(master); osc.start(t); return { osc, g };
+        },
+        ({ osc, g }, note, t) => {
+            g.gain.setValueAtTime(0.38, t); g.gain.linearRampToValueAtTime(0, t + 0.03);
+            osc.stop(t + 0.04);
+        }
+    );
+
+    return (toTick - fromTick) * secPerTick;
+}
+
+function chipStartMusic() {
+    if (chipStarted) return;
+    chipStarted = true;
+    chipEnsureCtx();
+
+    loadMidi().then(() => {
+        if (!chipStarted) return; // stopped while loading
+        const introEnd  = CHIP_MIDI.introEnd;
+        const loopStart = CHIP_MIDI.loopStart;
+        const loopEnd   = CHIP_MIDI.loopEnd;
+
+        // Capture t0 now so the loop is anchored to when the intro was scheduled,
+        // not to whenever the setTimeout callback fires. Using ctx.currentTime
+        // inside the callback adds ~introDur of extra delay (the audio clock has
+        // already advanced by then) — that was the silent bar between intro and loop.
+        const t0 = chipAudioCtx.currentTime;
+        const introDur = chipPlaySlice(t0, 0, introEnd);
+        const loopStartAt = t0 + introDur;
+
+        function scheduleLoop(loopStartTime) {
+            if (!chipStarted) return;
+            const dur = chipPlaySlice(loopStartTime, loopStart, loopEnd);
+            chipLoopTimeout = setTimeout(() => scheduleLoop(loopStartTime + dur), (dur - 0.05) * 1000);
+        }
+        chipLoopTimeout = setTimeout(() => scheduleLoop(loopStartAt), (introDur - 0.05) * 1000);
+    }).catch(err => console.error('MIDI load failed:', err));
+}
+
+function chipStopMusic() {
+    chipStarted = false;
+    if (chipLoopTimeout) { clearTimeout(chipLoopTimeout); chipLoopTimeout = null; }
+    if (chipAudioCtx) {
+        const now = chipAudioCtx.currentTime;
+        [chipMasterGain, chipDrumGain].forEach(g => {
+            if (!g) return;
+            g.gain.setValueAtTime(g.gain.value, now);
+            g.gain.linearRampToValueAtTime(0, now + 0.3);
+        });
+        setTimeout(() => { chipMasterGain = null; chipDrumGain = null; }, 400);
+    }
+}
+
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
 // Draw keyboard immediately so it's visible from frame 1
 drawKeyboard();
-requestAnimationFrame(() => requestAnimationFrame(() => showIntroScreen()));
+
+// Browsers block AudioContext until a user gesture. We show a full-screen
+// overlay on top of the console; the first tap/click dismisses it, starts
+// the music, and kicks off the splash screen — all in the same gesture.
+(function bootWithTap() {
+    const overlay = document.createElement('div');
+    Object.assign(overlay.style, {
+        position: 'fixed', inset: '0', zIndex: '9999',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'transparent', cursor: 'pointer',
+    });
+    // Blinking "TAP TO START" label positioned at the bottom of the console area
+    const label = document.createElement('div');
+    Object.assign(label.style, {
+        fontFamily: 'monospace', fontSize: '13px', color: '#ffffff',
+        letterSpacing: '0.15em', opacity: '1',
+        animation: 'tapBlink 0.9s step-start infinite',
+        position: 'absolute', bottom: '18%',
+    });
+    label.textContent = 'TAP TO START';
+    // Inject the blink keyframe once
+    if (!document.getElementById('_tapBlinkStyle')) {
+        const s = document.createElement('style');
+        s.id = '_tapBlinkStyle';
+        s.textContent = '@keyframes tapBlink { 0%,49%{opacity:1} 50%,100%{opacity:0} }';
+        document.head.appendChild(s);
+    }
+    overlay.appendChild(label);
+    document.body.appendChild(overlay);
+
+    const start = () => {
+        overlay.remove();
+        chipStartMusic();
+        showIntroScreen();
+    };
+    overlay.addEventListener('pointerdown', start, { once: true });
+    overlay.addEventListener('keydown',     start, { once: true });
+})();
 </script>
 </body>
 </html>
