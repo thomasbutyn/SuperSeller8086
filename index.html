@@ -2585,7 +2585,7 @@ function parseMidi(buffer) {
 }
 
 async function loadMidi() {
-    const resp = await fetch('/SuperSeller8086.mid');
+    const resp = await fetch('./SuperSeller8086.mid');
     if (!resp.ok) throw new Error(`Failed to load MIDI: ${resp.status}`);
     const buf = await resp.arrayBuffer();
     CHIP_MIDI = parseMidi(buf);
