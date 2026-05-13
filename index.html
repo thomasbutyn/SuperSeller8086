@@ -427,14 +427,29 @@ function drawKeyboard() {
         for (let c = c1 + 1; c < c2; c++) { setB(r1, c, '─'); setB(r2, c, '─'); }
         for (let r = r1 + 1; r < r2; r++) { setB(r, c1, '│'); setB(r, c2, '│'); }
 
-        // Label
-        const midC = Math.floor((c1 + c2) / 2);
-        const midR = Math.floor((r1 + r2) / 2);
-        const lStart = midC - Math.floor(label.length / 2) + (row === 1 ? 1 : 0);
-        label.split('').forEach((ch, i) => {
-            const c = lStart + i;
-            if (c > c1 && c < c2) { g[midR][c] = ch; col[midR][c] = textCol; }
-        });
+        // Label — ENTER left, (CONTINUE) right conditionally white
+        const midR2 = Math.floor((r1 + r2) / 2);
+        if (isEnter) {
+            const canCont = waitingForResults || waitingForUpgrade || waitingForShopping || waitingForRoom || waitingForEnter;
+            // "ENTER" at col 2
+            'ENTER'.split('').forEach((ch, i) => {
+                if (2 + i < c2) { g[midR2][2 + i] = ch; col[midR2][2 + i] = on ? pressedCol : norm; }
+            });
+            // "(CONTINUE)" near right
+            const cont = '(CONTINUE)';
+            const contStart = c2 - cont.length - 1;
+            cont.split('').forEach((ch, i) => {
+                const cc = contStart + i;
+                if (cc > c1 && cc < c2) { g[midR2][cc] = ch; col[midR2][cc] = canCont ? '#ffffff' : '#444444'; }
+            });
+        } else {
+            const midC = Math.floor((c1 + c2) / 2);
+            const lStart = midC - Math.floor(label.length / 2) + (row === 1 ? 1 : 0);
+            label.split('').forEach((ch, i) => {
+                const c = lStart + i;
+                if (c > c1 && c < c2) { g[midR2][c] = ch; col[midR2][c] = textCol; }
+            });
+        }
     });
 }
 
@@ -672,8 +687,6 @@ function buildBroadwayGrid(tick) {
         }
     }
 
-    // "PRESS ENTER TO CONTINUE" sits in the gap between trim frame and keyboard
-    writeCenter(g, KB_TOP - 1, 'PRESS ENTER TO CONTINUE');
 
     RINGS.forEach(({ rect }) =>
         drawRect(g, rect, { h: '─', v: '│', tl: '┌', tr: '┐', bl: '└', br: '┘' })
@@ -723,9 +736,8 @@ function animateRadialReveal(fromFn, toFn, tickMs = TICK_SCROLL_MS, invert = fal
     const STEPS   = KB_TOP;
     const cx      = (COLS - 1) / 2;
     const cy      = (KB_TOP - 1) / 2;
-    const aspect  = KB_TOP / COLS;
-    // Corner distance in aspect-corrected space — overshoot by 5% to guarantee full coverage
-    const maxDist = Math.sqrt(cx * cx + (cy / aspect) * (cy / aspect)) * 1.05;
+    // Raw grid-space corner distance — no aspect correction so it definitely reaches corners
+    const maxDist = Math.sqrt(cx * cx + cy * cy) * 1.15;
     const RING    = maxDist * 0.06;
 
     return new Promise(resolve => {
@@ -745,7 +757,7 @@ function animateRadialReveal(fromFn, toFn, tickMs = TICK_SCROLL_MS, invert = fal
                 const row    = [];
                 const rowCol = [];
                 for (let c = 0; c < COLS; c++) {
-                    const dr     = (r - cy) / (KB_TOP / COLS);
+                    const dr     = r - cy;
                     const dc     = c - cx;
                     const dist   = Math.sqrt(dc * dc + dr * dr);
                     const showTo = invert ? dist >= radius : dist <= radius;
@@ -1076,20 +1088,20 @@ function animateSpiralClock(fromGrid, toGrid, fromColors = null, toColors = null
     const STEPS   = KB_TOP;
     const cx      = (COLS - 1) / 2;
     const cy      = (KB_TOP - 1) / 2;
-    const maxDist = Math.sqrt(cx * cx + cy * cy);
+    const maxDist = Math.sqrt(cx * cx + cy * cy) * 1.15;
     const BAR_ARC = Math.PI * 0.12;
     const RING    = maxDist * 0.06;
 
     const cellAngle = (r, c) => {
         const dx =  (c - cx);
-        const dy = -(r - cy) / (KB_TOP / COLS);
+        const dy = -(r - cy) / (KB_TOP / COLS); // aspect-correct angle only
         let a = Math.atan2(dx, dy);
         if (a < 0) a += Math.PI * 2;
         return a;
     };
     const cellDist = (r, c) => {
-        const dr = (r - cy) / (KB_TOP / COLS);
-        const dc =  c - cx;
+        const dr = r - cy;   // raw, no aspect correction — matches maxDist
+        const dc = c - cx;
         return Math.sqrt(dc * dc + dr * dr);
     };
 
@@ -1170,7 +1182,21 @@ const STOCKS = {
 const UNLOCK_COSTS = { red: 100, blue: 1000, yellow: 10000 };
 const MULTIPLIER_COSTS = { 10: 500, 100: 5000, 1000: 50000 };
 const MULTIPLIER_ORDER = [1, 10, 100, 1000];
-const player = { cash: 100, startingCash: 100, green: 0, red: 0, blue: 0, yellow: 0, unlocked: new Set(['green']), multiplier: 1 };
+const player = { cash: 100, startingCash: 100, green: 0, red: 0, blue: 0, yellow: 0, unlocked: new Set(['green']), multiplier: 1, decorations: new Set() };
+
+const DECORATION_ITEMS = [
+    { id: 'plant',     key: 'q', label: 'DESK PLANT',    cost: 100,        costLabel: '$100'  },
+    { id: 'lamp',      key: 'w', label: 'LAVA LAMP',     cost: 1000,       costLabel: '$1K'   },
+    { id: 'monitor',   key: 'e', label: 'EXTRA MONITOR', cost: 10000,      costLabel: '$10K'  },
+    { id: 'chandelier',key: 'r', label: 'CHANDELIER',    cost: 100000,     costLabel: '$100K' },
+    { id: 'butler',    key: 'a', label: 'BUTLER',        cost: 1000000,    costLabel: '$1M'   },
+];
+
+let waitingForShopping = false;
+let waitingForRoom     = false;
+let butlerTick         = 0;
+let roomInterval       = null;
+
 let roundTime = 30, roundInterval = null;
 let scanCol = 0, scanFrame = 0;
 const buyImpacts = []; // { row, col, hex, frames }
@@ -1501,80 +1527,126 @@ const updateGameDisplay = () => {
 const ROUND_TICKS = 30;
 
 function simulateAllPrices() {
-    // Each stock is hand-shaped with 2 interesting moments and uses the full vertical range.
-    // History has ROUND_TICKS+1 entries (index 0 = start, index 30 = end).
-
     const n = ROUND_TICKS + 1;
 
-    // Helper: interpolate a set of keyframes into n evenly-spaced values
-    // keyframes = [{t: 0..1, v: 0..1}, ...], returns array of n values in [0,1]
-    function buildCurve(keyframes) {
+    // ── Seeded RNG (new seed each round) ───────────────────────────────────────
+    let seed = (Date.now() ^ (Math.random() * 0xffffffff)) >>> 0;
+    const rng = () => {
+        seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
+        return ((seed >>> 0) / 0xffffffff);
+    };
+    const rngRange = (lo, hi) => lo + rng() * (hi - lo);
+    const rngInt   = (lo, hi) => Math.floor(rngRange(lo, hi + 1));
+
+    // ── Build one stock curve with exactly 2 events ────────────────────────────
+    // Event types:
+    //   'slope'  – the gradient changes sharply (new direction / steepness)
+    //   'jump'   – a sudden vertical price discontinuity (gap up or gap down)
+    function buildStockHistory() {
+        const MIN_P = 0.05, MAX_P = 0.95;
+
+        // Starting price — avoid extremes so events have room to move
+        let startV = rngRange(0.2, 0.8);
+
+        // Place 2 events at distinct, well-spaced times
+        const t1 = rngRange(0.2, 0.45);
+        const t2 = rngRange(0.55, 0.80);
+
+        // Each event is one of two types
+        const eventType = (i) => rng() < 0.5 ? 'slope' : 'jump';
+        const ev1Type = eventType(0);
+        const ev2Type = eventType(1);
+
+        // Build keyframe list: [start, pre-event1, post-event1, pre-event2, post-event2, end]
+        const kf = [];
+
+        // Segment 0 → event 1: random slope
+        const slope01 = rngRange(-0.6, 0.6); // change in v over whole range
+        const v_at_t1 = Math.max(MIN_P, Math.min(MAX_P, startV + slope01 * t1));
+
+        kf.push({ t: 0, v: startV });
+
+        if (ev1Type === 'jump') {
+            // Approach event then snap to a new price
+            kf.push({ t: t1 - 0.005, v: v_at_t1 });
+            const jumpMag = rngRange(0.15, 0.45) * (rng() < 0.5 ? 1 : -1);
+            const v_post1 = Math.max(MIN_P, Math.min(MAX_P, v_at_t1 + jumpMag));
+            kf.push({ t: t1, v: v_post1 });
+            // Continue from post-jump price
+            var v_leaving1 = v_post1;
+        } else {
+            // Slope change: arrive at t1, then pick a new gradient
+            kf.push({ t: t1, v: v_at_t1 });
+            var v_leaving1 = v_at_t1;
+        }
+
+        // Segment event1 → event2
+        const slope12 = rngRange(-0.7, 0.7);
+        const span12 = t2 - t1;
+        const v_at_t2 = Math.max(MIN_P, Math.min(MAX_P, v_leaving1 + slope12 * span12));
+
+        if (ev2Type === 'jump') {
+            kf.push({ t: t2 - 0.005, v: v_at_t2 });
+            const jumpMag = rngRange(0.15, 0.45) * (rng() < 0.5 ? 1 : -1);
+            const v_post2 = Math.max(MIN_P, Math.min(MAX_P, v_at_t2 + jumpMag));
+            kf.push({ t: t2, v: v_post2 });
+            var v_leaving2 = v_post2;
+        } else {
+            kf.push({ t: t2, v: v_at_t2 });
+            var v_leaving2 = v_at_t2;
+        }
+
+        // Segment event2 → end
+        const slope2e = rngRange(-0.6, 0.6);
+        const span2e  = 1.0 - t2;
+        const v_end   = Math.max(MIN_P, Math.min(MAX_P, v_leaving2 + slope2e * span2e));
+        kf.push({ t: 1.0, v: v_end });
+
+        // Interpolate keyframes → n price values
         const out = [];
         for (let i = 0; i < n; i++) {
             const t = i / (n - 1);
-            // find surrounding keyframes
-            let lo = keyframes[0], hi = keyframes[keyframes.length - 1];
-            for (let k = 0; k < keyframes.length - 1; k++) {
-                if (t >= keyframes[k].t && t <= keyframes[k + 1].t) {
-                    lo = keyframes[k]; hi = keyframes[k + 1]; break;
-                }
+            let lo = kf[0], hi = kf[kf.length - 1];
+            for (let k = 0; k < kf.length - 1; k++) {
+                if (t >= kf[k].t && t <= kf[k + 1].t) { lo = kf[k]; hi = kf[k + 1]; break; }
             }
-            const span = hi.t - lo.t || 1;
+            const span = hi.t - lo.t || 1e-6;
             const frac = (t - lo.t) / span;
-            // smooth step between keyframes
-            const s = frac * frac * (3 - 2 * frac);
+            const isJumpSegment = (hi.t - lo.t) < 0.01;
+            const s = isJumpSegment ? frac : frac * frac * (3 - 2 * frac);
             out.push(lo.v + (hi.v - lo.v) * s);
         }
-        return out;
+
+        // Enforce: min must be below 0.5 and max must be above 0.5
+        let minV = Math.min(...out), maxV = Math.max(...out);
+        if (minV >= 0.5 || maxV <= 0.5) {
+            // Rescale so the range spans across 0.5
+            // Pin the further extreme, stretch the other side past 0.5
+            const lo_target = Math.min(minV, 0.35);  // push min below 0.5
+            const hi_target = Math.max(maxV, 0.65);  // push max above 0.5
+            for (let i = 0; i < out.length; i++) {
+                out[i] = lo_target + (out[i] - minV) / (maxV - minV + 1e-6) * (hi_target - lo_target);
+                out[i] = Math.max(0.05, Math.min(0.95, out[i]));
+            }
+            minV = Math.min(...out); maxV = Math.max(...out);
+        }
+        // Final check: if min still ≥ 0.5, force-shift down; if max still ≤ 0.5 force-shift up
+        if (Math.min(...out) >= 0.5) {
+            const shift = Math.min(...out) - 0.35;
+            for (let i = 0; i < out.length; i++) out[i] = Math.max(0.05, out[i] - shift);
+        }
+        if (Math.max(...out) <= 0.5) {
+            const shift = 0.65 - Math.max(...out);
+            for (let i = 0; i < out.length; i++) out[i] = Math.min(0.95, out[i] + shift);
+        }
+
+        return out.map(v => parseFloat((10 + v * 80).toFixed(2)));
     }
 
-    function toPrices(curve, minP, maxP) {
-        return curve.map(v => parseFloat((minP + v * (maxP - minP)).toFixed(2)));
-    }
-
-    // GREEN: starts mid, drops to bottom (interesting drop), then climbs sharply to top
-    const greenCurve = buildCurve([
-        { t: 0,    v: 0.5 },
-        { t: 0.35, v: 0.05 },   // ← moment 1: bottom
-        { t: 0.36, v: 0.05 },
-        { t: 1.0,  v: 0.95 },   // ← moment 2: sharp recovery to top
-    ]);
-    STOCKS.green.history  = toPrices(greenCurve, 10, 90);
-    STOCKS.green.price    = STOCKS.green.history[STOCKS.green.history.length - 1];
-
-    // RED: climbs steadily to top, then sharp crash to bottom, small bounce at end
-    const redCurve = buildCurve([
-        { t: 0,    v: 0.1  },
-        { t: 0.55, v: 0.95 },   // ← moment 1: peak
-        { t: 0.56, v: 0.95 },
-        { t: 0.75, v: 0.05 },   // ← moment 2: crash
-        { t: 1.0,  v: 0.25 },
-    ]);
-    STOCKS.red.history  = toPrices(redCurve, 10, 90);
-    STOCKS.red.price    = STOCKS.red.history[STOCKS.red.history.length - 1];
-
-    // BLUE: flat near bottom, sudden spike to top midway, then flat near top
-    const blueCurve = buildCurve([
-        { t: 0,    v: 0.05 },
-        { t: 0.39, v: 0.08 },   // ← moment 1: flat low end
-        { t: 0.4,  v: 0.08 },
-        { t: 0.6,  v: 0.92 },   // ← moment 2: explosive spike
-        { t: 0.61, v: 0.92 },
-        { t: 1.0,  v: 0.90 },
-    ]);
-    STOCKS.blue.history  = toPrices(blueCurve, 10, 90);
-    STOCKS.blue.price    = STOCKS.blue.history[STOCKS.blue.history.length - 1];
-
-    // YELLOW: smooth sine-like arc — rises to top early, dips to bottom mid, recovers slightly
-    const yellowCurve = buildCurve([
-        { t: 0,    v: 0.3  },
-        { t: 0.25, v: 0.95 },   // ← moment 1: early peak
-        { t: 0.26, v: 0.95 },
-        { t: 0.7,  v: 0.05 },   // ← moment 2: valley
-        { t: 1.0,  v: 0.45 },
-    ]);
-    STOCKS.yellow.history  = toPrices(yellowCurve, 10, 90);
-    STOCKS.yellow.price    = STOCKS.yellow.history[STOCKS.yellow.history.length - 1];
+    ['green', 'red', 'blue', 'yellow'].forEach(key => {
+        STOCKS[key].history = buildStockHistory();
+        STOCKS[key].price   = STOCKS[key].history[STOCKS[key].history.length - 1];
+    });
 }
 
 function priceAtTick(key, tick) {
@@ -1723,10 +1795,9 @@ function buildUpgradeGrid() {
         });
     }
 
-    writeCenter(g, 31, 'PRESS ENTER TO CONTINUE');
-    for (let c = 0; c < COLS; c++) col[31][c] = '#666666';
 
-    for (let c = 0; c < COLS; c++) { g[32][c] = (c % 2 === 0) ? '─' : ' '; col[32][c] = '#333333'; }
+
+    for (let c = 0; c < COLS; c++) { g[32][c] = (c % 2 === 0) ? '─' : ' '; col[32][c] = '#444444'; }
 
     return { g, col };
 }
@@ -1776,20 +1847,318 @@ function handleUpgradeKey(k) {
     renderer.render(full, fullC, false);
 }
 
-async function handleUpgradeEnter() {
-    waitingForUpgrade = false;
+// ─── SHOPPING SCREEN ──────────────────────────────────────────────────────────
+function buildShoppingGrid() {
+    const g   = makeGrid();
+    const col = makeColorGrid();
+
+    writeCenter(g, 1, 'SHOPPING');
+    for (let c = 0; c < COLS; c++) col[1][c] = '#ffffff';
+    fillRow(g, 2, '─');
+    for (let c = 0; c < COLS; c++) col[2][c] = '#444444';
+
+    writeCenter(g, 4, '── ROOM DECORATIONS ──');
+    for (let c = 0; c < COLS; c++) { if (g[4][c] !== ' ') col[4][c] = '#aaffaa'; }
+
+    DECORATION_ITEMS.forEach(({ id, key, label, cost, costLabel }, i) => {
+        const r      = 6 + i * 4;
+        const owned  = player.decorations.has(id);
+        const afford = player.cash >= cost;
+        const flash  = keysHeld.has(key) || keysHeld.has(key.toUpperCase());
+
+        let border, bg, textCol;
+        if (owned) {
+            border = '#aaffaa'; bg = '#001800'; textCol = '#aaffaa';
+        } else if (flash && afford) {
+            border = '#ffffff'; bg = '#222222'; textCol = '#ffffff';
+        } else if (afford) {
+            border = '#888888'; bg = '#111111'; textCol = '#cccccc';
+        } else {
+            border = '#333333'; bg = '#0a0a0a'; textCol = '#444444';
+        }
+
+        // Box: rows r..r+2, cols 1..38
+        for (let br = r; br <= r + 2; br++)
+            for (let bc = 1; bc <= 38; bc++) { g[br][bc] = ' '; col[br][bc] = bg; }
+        for (let bc = 1; bc <= 38; bc++) { g[r][bc] = '─'; g[r+2][bc] = '─'; col[r][bc] = border; col[r+2][bc] = border; }
+        for (let br = r; br <= r+2; br++) { g[br][1] = '│'; g[br][38] = '│'; col[br][1] = border; col[br][38] = border; }
+        g[r][1]='┌'; g[r][38]='┐'; g[r+2][1]='└'; g[r+2][38]='┘';
+
+        const midR = r + 1;
+        const keyLabel = `${key.toUpperCase()} - ${label}`;
+        const status   = owned ? '★ OWNED' : costLabel;
+        writeStr(g, midR, 3, keyLabel);
+        for (let bc = 3; bc < 3 + keyLabel.length; bc++) col[midR][bc] = textCol;
+        const statusStart = 37 - status.length;
+        writeStr(g, midR, statusStart, status);
+        for (let bc = statusStart; bc < statusStart + status.length; bc++) col[midR][bc] = owned ? '#aaffaa' : textCol;
+    });
+
+
+    for (let c = 0; c < COLS; c++) { g[32][c] = (c % 2 === 0) ? '─' : ' '; col[32][c] = '#444444'; }
+
+    return { g, col };
+}
+
+async function showShoppingScreen(fromGrid, fromColors) {
+    const { g: shopG, col: shopCol } = buildShoppingGrid();
+    transitioning = true;
+    await randomTransition(fromGrid, shopG, fromColors, shopCol);
+    transitioning = false;
+    const full  = [...shopG.slice(0, KB_TOP), ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(' '))];
+    const fullC = [...shopCol.slice(0, KB_TOP), ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(null))];
+    renderer.render(full, fullC, false);
+    waitingForShopping = true;
+}
+
+function handleShoppingKey(k) {
+    const item = DECORATION_ITEMS.find(d => d.key === k.toLowerCase());
+    if (!item) return;
+    if (player.decorations.has(item.id)) return;
+    if (player.cash < item.cost) return;
+    player.cash -= item.cost;
+    player.decorations.add(item.id);
+    drawKeyboard();
+    const { g, col } = buildShoppingGrid();
+    const full  = [...g.slice(0, KB_TOP), ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(' '))];
+    const fullC = [...col.slice(0, KB_TOP), ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(null))];
+    renderer.render(full, fullC, false);
+}
+
+async function handleShoppingEnter() {
+    waitingForShopping = false;
+    const { g: shopG, col: shopCol } = buildShoppingGrid();
+    await showRoomScreen(shopG, shopCol);
+}
+
+// ─── ROOM SCREEN ──────────────────────────────────────────────────────────────
+const BUTLER_FRAMES = [
+    [
+        '   ___   ',
+        '  (o o)  ',
+        '  / | \\  ',
+        ' /  |  \\ ',
+        "  _/ \\_  ",
+    ],
+    [
+        '   ___   ',
+        '  (- -)  ',
+        '  \\ | /  ',
+        ' /  |  \\ ',
+        "  _/ \\_  ",
+    ],
+];
+
+function buildRoomGrid(tick = 0) {
+    const g   = makeGrid();
+    const col = makeColorGrid();
+
+    writeCenter(g, 1, 'ROOM');
+    for (let c = 0; c < COLS; c++) col[1][c] = '#ffffff';
+    fillRow(g, 2, '─');
+    for (let c = 0; c < COLS; c++) col[2][c] = '#444444';
+
+    // ── Room perspective box ──────────────────────────────────────────────────
+    // Outer walls: full content zone edges  rows 3..32, cols 0..39
+    // Back wall (inset): rows 7..26, cols 8..31
+    // Perspective lines connect outer corners to inner corners
+
+    const OT = 3,  OB = 32, OL = 0,  OR = 39;
+    const IT = 7,  IB = 26, IL = 8,  IR = 31;
+    const WC = '#ffffff';  // all room lines white
+
+    // Back wall border only — no fill pattern
+    for (let c = IL; c <= IR; c++) { g[IT][c] = '─'; g[IB][c] = '─'; col[IT][c] = WC; col[IB][c] = WC; }
+    for (let r = IT; r <= IB; r++) { g[r][IL] = '│'; g[r][IR] = '│'; col[r][IL] = WC; col[r][IR] = WC; }
+    g[IT][IL]='┌'; g[IT][IR]='┐'; g[IB][IL]='└'; g[IB][IR]='┘';
+
+    // Floor
+    for (let c = OL; c <= OR; c++) { g[OB][c] = '─'; col[OB][c] = WC; }
+    // Ceiling
+    for (let c = OL; c <= OR; c++) { g[OT][c] = '─'; col[OT][c] = WC; }
+    // Left wall
+    for (let r = OT; r <= OB; r++) { g[r][OL] = '│'; col[r][OL] = WC; }
+    // Right wall
+    for (let r = OT; r <= OB; r++) { g[r][OR] = '│'; col[r][OR] = WC; }
+    // Outer corners
+    g[OT][OL]='╔'; g[OT][OR]='╗'; g[OB][OL]='╚'; g[OB][OR]='╝';
+    col[OT][OL]=col[OT][OR]=col[OB][OL]=col[OB][OR]=WC;
+
+    // Perspective lines connecting outer corners to inner corners
+    const drawPerspLine = (r0, c0, r1, c1) => {
+        const steps = Math.max(Math.abs(r1-r0), Math.abs(c1-c0));
+        for (let i = 0; i <= steps; i++) {
+            const r = Math.round(r0 + (r1-r0) * i/steps);
+            const c = Math.round(c0 + (c1-c0) * i/steps);
+            if (r >= 0 && r < KB_TOP && c >= 0 && c < COLS && g[r][c] === ' ') {
+                const dr = r1-r0, dc = c1-c0;
+                const ch = Math.abs(dc) > Math.abs(dr)*1.5 ? '─'
+                         : Math.abs(dr) > Math.abs(dc)*1.5 ? '│'
+                         : (dr*dc > 0) ? '\\' : '/';
+                g[r][c] = ch; col[r][c] = WC;
+            }
+        }
+    };
+    drawPerspLine(OT, OL, IT, IL);
+    drawPerspLine(OT, OR, IT, IR);
+    drawPerspLine(OB, OL, IB, IL);
+    drawPerspLine(OB, OR, IB, IR);
+
+    // ── CHANDELIER — hangs from ceiling centre, rows 3-10 ──
+    if (player.decorations.has('chandelier')) {
+        const p = tick % 4;
+        const B = ['●','○','◉','○'];
+        const art = [
+            '      │      ',
+            '  ╔═══╩═══╗  ',
+            `  ║${B[p]} ║ ${B[(p+1)%4]}║  `,
+            `  ╠${B[(p+2)%4]}═══╬═══${B[(p+3)%4]}╣  `,
+            '  ╚═══╩═══╝  ',
+        ];
+        art.forEach((line, i) => {
+            writeCenter(g, 4 + i, line);
+            for (let c = 0; c < COLS; c++)
+                if (g[4+i][c] !== ' ' && g[4+i][c] !== '░') col[4+i][c] = i === 0 ? '#888844' : i >= 3 ? '#ffee88' : '#ccaa00';
+        });
+    }
+
+    // ── DESK PLANT — bottom-left, rows 20-31, cols 1-13 ──
+    if (player.decorations.has('plant')) {
+        const art = [
+            '   \\|/|\\|/   ',
+            '  --*-|-*--  ',
+            '   /|\\|/|\\   ',
+            '    ( | )    ',
+            '   ( _|_ )   ',
+            '  (  |||  )  ',
+            '    |||||    ',
+            '   ═══════   ',
+            '   ║     ║   ',
+            '   ╚═════╝   ',
+        ];
+        art.forEach((line, i) => {
+            writeStr(g, 21 + i, 1, line);
+            const isLeaf = i < 3, isPot = i >= 7;
+            for (let c = 1; c < 1 + line.length; c++)
+                if (g[21+i][c] !== ' ' && g[21+i][c] !== '░')
+                    col[21+i][c] = isPot ? '#886633' : isLeaf ? (i===0?'#33ff33':'#22cc22') : '#228822';
+        });
+    }
+
+    // ── EXTRA MONITOR — upper-right on back wall, rows 8-20, cols 20-38 ──
+    if (player.decorations.has('monitor')) {
+        const art = [
+            '┌─────────────────┐',
+            '│ ╔═════════════╗ │',
+            '│ ║             ║ │',
+            '│ ║  ██     ██  ║ │',
+            '│ ║  ██     ██  ║ │',
+            '│ ║             ║ │',
+            '│ ║  ▓▓▓▓▓▓▓▓▓  ║ │',
+            '│ ║             ║ │',
+            '│ ╚═════════════╝ │',
+            '└────────┬────────┘',
+            '         │         ',
+            '   ──────┴──────   ',
+        ];
+        art.forEach((line, i) => {
+            writeStr(g, 9 + i, 20, line);
+            const isScreen = i >= 1 && i <= 8;
+            for (let c = 20; c < 20 + line.length; c++)
+                if (g[9+i][c] !== ' ' && g[9+i][c] !== '░')
+                    col[9+i][c] = isScreen ? '#4477ff' : '#334488';
+        });
+    }
+
+    // ── LAVA LAMP — bottom-right, rows 16-30, cols 26-38 ──
+    if (player.decorations.has('lamp')) {
+        const p = Math.floor(tick / 2) % 4;
+        const blobs = [['▓','░','▒','▓'],['▒','▓','░','▒'],['░','▒','▓','░'],['▓','░','▒','▓']];
+        const b = blobs[p];
+        const art = [
+            '  ╔═════════╗  ',
+            ` ╔╣ ${b[0]} ${b[1]} ${b[2]} ${b[0]} ╠╗ `,
+            ` ║║ ${b[1]} ${b[2]} ${b[3]} ${b[1]} ║║ `,
+            ` ║║ ${b[2]} ${b[3]} ${b[0]} ${b[2]} ║║ `,
+            ` ║║ ${b[3]} ${b[0]} ${b[1]} ${b[3]} ║║ `,
+            ` ║║ ${b[0]} ${b[1]} ${b[2]} ${b[0]} ║║ `,
+            ` ╚╣ ${b[1]} ${b[2]} ${b[3]} ${b[1]} ╠╝ `,
+            '  ╚═════════╝  ',
+            '    ╔═════╗    ',
+            '    ║     ║    ',
+            '  ══╩═════╩══  ',
+        ];
+        art.forEach((line, i) => {
+            writeStr(g, 19 + i, 25, line);
+            const isGlob = i >= 1 && i <= 6;
+            for (let c = 25; c < 25 + line.length; c++)
+                if (g[19+i][c] !== ' ' && g[19+i][c] !== '░')
+                    col[19+i][c] = isGlob ? '#ff6600' : '#883300';
+        });
+    }
+
+    // ── BUTLER — bottom centre, rows 24-30 ──
+    if (player.decorations.has('butler')) {
+        const frame = BUTLER_FRAMES[Math.floor(tick / 4) % BUTLER_FRAMES.length];
+        frame.forEach((line, i) => {
+            writeCenter(g, 24 + i, line);
+            for (let c = 0; c < COLS; c++)
+                if (g[24+i][c] !== ' ' && g[24+i][c] !== '░')
+                    col[24+i][c] = i === 0 ? '#aaaaaa' : '#dddddd';
+        });
+    }
+
+    return { g, col };
+}
+
+async function showRoomScreen(fromGrid, fromColors) {
+    butlerTick = 0;
+    const { g: roomG, col: roomCol } = buildRoomGrid(butlerTick);
+    transitioning = true;
+    await randomTransition(fromGrid, roomG, fromColors, roomCol);
+    transitioning = false;
+
+    const renderRoom = () => {
+        const { g, col } = buildRoomGrid(butlerTick);
+        const full  = [...g.slice(0, KB_TOP), ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(' '))];
+        const fullC = [...col.slice(0, KB_TOP), ...Array(ROWS - KB_TOP).fill(null).map(() => Array(COLS).fill(null))];
+        renderer.render(full, fullC, false);
+    };
+    renderRoom();
+
+    roomInterval = setInterval(() => {
+        if (transitioning || !waitingForRoom) { clearInterval(roomInterval); roomInterval = null; return; }
+        butlerTick++;
+        renderRoom();
+    }, 200);
+
+    waitingForRoom = true;
+}
+
+async function handleRoomEnter() {
+    waitingForRoom = false;
+    if (roomInterval) { clearInterval(roomInterval); roomInterval = null; }
+    const { g: roomG, col: roomCol } = buildRoomGrid(butlerTick);
+    const { g: upG,   col: upCol   } = buildUpgradeGrid();
+    // Transition to game
     Object.assign(player, { startingCash: player.cash, green: 0, red: 0, blue: 0, yellow: 0 });
     simulateAllPrices();
     gameActive = true;
-    const { g: upG,   col: upCol   } = buildUpgradeGrid();
     const { g: gameG, col: gameCol } = buildGameGrid();
     transitioning = true;
-    await randomTransition(upG, gameG, upCol, gameCol);
+    await randomTransition(roomG, gameG, roomCol, gameCol);
     transitioning = false;
     startRound();
 }
 
+async function handleUpgradeEnter() {
+    waitingForUpgrade = false;
+    const { g: upG, col: upCol } = buildUpgradeGrid();
+    await showShoppingScreen(upG, upCol);
+}
+
 async function endRound() {
+    if (!gameActive) return;
     gameActive = false;
 
     const colorTotal = ['green','red','blue','yellow'].reduce((s, c) => s + player[c] * priceAtTick(c, ROUND_TICKS), 0);
@@ -1854,14 +2223,17 @@ function buildSocialGrid() {
     fillRow(g, 2, '─');
     for (let c = 0; c < COLS; c++) col[2][c] = '#444444';
 
-    // Rows 4-5: profit results
+    // Row 4: results label
+    writeCenter(g, 4, '── RESULTS ──');
+    for (let c = 0; c < COLS; c++) { if (g[4][c] !== ' ') col[4][c] = '#aaffaa'; }
+
+    // Rows 7-8: profit results (moved down 3)
     if (lastProfit !== undefined) {
         const profitLine = `Profit: $${lastProfit.toFixed(2)}`;
         const pctLine    = `(${((lastProfit / lastStartingCash) * 100).toFixed(1)}%)`;
-        const profitColor = lastProfit >= 0 ? '#aaffaa' : '#ff8888';
-        writeCenter(g, 4, profitLine);
-        writeCenter(g, 5, pctLine);
-        [4, 5].forEach(r => { for (let c = 0; c < COLS; c++) { if (g[r][c] !== ' ') col[r][c] = profitColor; } });
+        writeCenter(g, 7, profitLine);
+        writeCenter(g, 8, pctLine);
+        [7, 8].forEach(r => { for (let c = 0; c < COLS; c++) { if (g[r][c] !== ' ') col[r][c] = '#ffffff'; } });
     }
 
     // Row 12: header
@@ -1901,12 +2273,9 @@ function buildSocialGrid() {
         });
     });
 
-    // Row 31: PRESS ENTER TO CONTINUE
-    writeCenter(g, 31, 'PRESS ENTER TO CONTINUE');
-    for (let c = 0; c < COLS; c++) col[31][c] = '#666666';
 
-    // Row 32: dashed line below PRESS ENTER
-    for (let c = 0; c < COLS; c++) { g[32][c] = (c % 2 === 0) ? '─' : ' '; col[32][c] = '#333333'; }
+
+    for (let c = 0; c < COLS; c++) { g[32][c] = (c % 2 === 0) ? '─' : ' '; col[32][c] = '#444444'; }
 
     return { g, col };
 }
@@ -1973,8 +2342,11 @@ const BUY_KEYS  = new Set(['q','w','e','r']);
 const SELL_KEYS = new Set(['a','s','d','f']);
 
 function submitCommand() {
-    if (waitingForUpgrade) { sfxEnter(); handleUpgradeEnter(); return; }
-    if (waitingForResults) { sfxEnter(); handleResultsEnter(); return; }
+    if (waitingForUpgrade)  { sfxEnter(); handleUpgradeEnter();  return; }
+    if (waitingForShopping) { sfxEnter(); handleShoppingEnter(); return; }
+    if (waitingForRoom)     { sfxEnter(); handleRoomEnter();     return; }
+    if (waitingForResults)  { sfxEnter(); handleResultsEnter();  return; }
+    if (gameActive && !transitioning) { sfxEnter(); endRound(); return; }
     if (waitingForEnter) {
         waitingForEnter = false;
         transitioning = true;
@@ -2010,6 +2382,11 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
 
     if (waitingForEnter) return;
+
+    if (waitingForShopping) {
+        handleShoppingKey(k);
+        return;
+    }
 
     if (waitingForUpgrade) {
         handleUpgradeKey(k);
