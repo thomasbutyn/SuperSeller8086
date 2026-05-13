@@ -1803,7 +1803,6 @@ function buildUpgradeGrid() {
 }
 
 async function showUpgradeScreen() {
-    chipMuteDrum();
     const { g: socialG, col: socialCol } = buildSocialGrid();
     const { g: upG,     col: upCol     } = buildUpgradeGrid();
     transitioning = true;
@@ -2113,7 +2112,6 @@ function buildRoomGrid(tick = 0) {
 }
 
 async function showRoomScreen(fromGrid, fromColors) {
-    chipMuteLead();
     butlerTick = 0;
     const { g: roomG, col: roomCol } = buildRoomGrid(butlerTick);
     transitioning = true;
@@ -2139,8 +2137,6 @@ async function showRoomScreen(fromGrid, fromColors) {
 
 async function handleRoomEnter() {
     waitingForRoom = false;
-    chipUnmuteDrum();
-    chipUnmuteLead();
     if (roomInterval) { clearInterval(roomInterval); roomInterval = null; }
     const { g: roomG, col: roomCol } = buildRoomGrid(butlerTick);
     const { g: upG,   col: upCol   } = buildUpgradeGrid();
