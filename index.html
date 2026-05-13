@@ -312,7 +312,7 @@ const KB_KEYS = [
     { label: 'S-SELL', row: 1, c1: 10, c2: 19, key: 's', norm: '#bb8888', pressed: '#ddaaaa', bg: '#1a0d0d', pbg: '#30191a' },
     { label: 'D-SELL', row: 1, c1: 20, c2: 29, key: 'd', norm: '#8899bb', pressed: '#aabbdd', bg: '#0d0d1a', pbg: '#19193a' },
     { label: 'F-SELL', row: 1, c1: 30, c2: 39, key: 'f', norm: '#bbaa77', pressed: '#ddccaa', bg: '#1a160a', pbg: '#302a14' },
-    { label: 'ENTER',  row: 2, c1: 0,  c2: 39, key: 'Enter', norm: '#ffffff', pressed: '#ffffff', bg: '#111111', pbg: '#444444' },
+    { label: 'SPACE',  row: 2, c1: 0,  c2: 39, key: ' ', norm: '#ffffff', pressed: '#ffffff', bg: '#111111', pbg: '#444444' },
 ];
 
 
@@ -431,8 +431,8 @@ function drawKeyboard() {
         const midR2 = Math.floor((r1 + r2) / 2);
         if (isEnter) {
             const canCont = waitingForResults || waitingForUpgrade || waitingForShopping || waitingForRoom || waitingForEnter;
-            // "ENTER" at col 2
-            'ENTER'.split('').forEach((ch, i) => {
+            // "SPACE" at col 2
+            'SPACE'.split('').forEach((ch, i) => {
                 if (2 + i < c2) { g[midR2][2 + i] = ch; col[midR2][2 + i] = on ? pressedCol : norm; }
             });
             // "(CONTINUE)" near right
@@ -509,7 +509,7 @@ function wireCanvasKeyboard(canvas) {
         const hit = hitTestKeyboard(canvas, cx, cy);
         if (!hit) return;
         keysHeld.add(hit.key);
-        if (hit.key === 'Enter') { submitCommand(); return; }
+        if (hit.key === ' ') { submitCommand(); return; }
         document.dispatchEvent(new KeyboardEvent('keydown', { key: hit.key, bubbles: true, repeat: false }));
     });
     canvas.addEventListener('pointerup', e => {
@@ -1701,7 +1701,7 @@ function buildUpgradeGrid() {
 
     // ── ROW 1: Stock unlocks ──
     writeCenter(g, 4, '── NEW STOCKS ──');
-    for (let c = 0; c < COLS; c++) col[4][c] = '#555555';
+    for (let c = 0; c < COLS; c++) col[4][c] = '#aaffaa';
 
     const stockBoxR1 = 5, stockBoxR2 = 9;
     const stockMidR  = Math.floor((stockBoxR1 + stockBoxR2) / 2);
@@ -1750,7 +1750,7 @@ function buildUpgradeGrid() {
         const multMidR  = Math.floor((multBoxR1 + multBoxR2) / 2);
 
         writeCenter(g, multBoxR1 - 1, '── BUY/SELL MULTIPLIER ──');
-        for (let c = 0; c < COLS; c++) col[multBoxR1 - 1][c] = '#555555';
+        for (let c = 0; c < COLS; c++) col[multBoxR1 - 1][c] = '#aaffaa';
 
         const MULT_COLS = [
             { c1: 0,  c2: 7  },
@@ -1803,6 +1803,7 @@ function buildUpgradeGrid() {
 }
 
 async function showUpgradeScreen() {
+    chipMuteDrum();
     const { g: socialG, col: socialCol } = buildSocialGrid();
     const { g: upG,     col: upCol     } = buildUpgradeGrid();
     transitioning = true;
@@ -2112,6 +2113,7 @@ function buildRoomGrid(tick = 0) {
 }
 
 async function showRoomScreen(fromGrid, fromColors) {
+    chipMuteLead();
     butlerTick = 0;
     const { g: roomG, col: roomCol } = buildRoomGrid(butlerTick);
     transitioning = true;
@@ -2137,6 +2139,8 @@ async function showRoomScreen(fromGrid, fromColors) {
 
 async function handleRoomEnter() {
     waitingForRoom = false;
+    chipUnmuteDrum();
+    chipUnmuteLead();
     if (roomInterval) { clearInterval(roomInterval); roomInterval = null; }
     const { g: roomG, col: roomCol } = buildRoomGrid(butlerTick);
     const { g: upG,   col: upCol   } = buildUpgradeGrid();
@@ -2375,7 +2379,7 @@ document.addEventListener('keydown', e => {
     keysHeld.add(e.key);
     if (e.repeat) return;
 
-    if (e.key === 'Enter') { e.preventDefault(); submitCommand(); return; }
+    if (e.key === ' ') { e.preventDefault(); submitCommand(); return; }
 
     const k = e.key.toLowerCase();
     if (!BUY_KEYS.has(k) && !SELL_KEYS.has(k)) return;
@@ -2613,6 +2617,7 @@ function chipEnsureCtx() {
 // Drums get their own bus so they can be mixed independently of pitched voices.
 let chipMasterGain = null;
 let chipDrumGain   = null;
+let chipLeadGain   = null;
 let chipSfxGain    = null;
 
 function chipGetMaster() {
@@ -2642,6 +2647,22 @@ function chipGetSfx() {
     }
     return chipSfxGain;
 }
+function chipGetLead() {
+    chipEnsureCtx();
+    if (!chipLeadGain) {
+        chipLeadGain = chipAudioCtx.createGain();
+        chipLeadGain.gain.value = 1.0; // sits in front of master, so master still controls overall level
+        chipLeadGain.connect(chipGetMaster());
+    }
+    return chipLeadGain;
+}
+
+// Smooth mute/unmute helpers — 80 ms fade so there are no clicks
+const MUTE_FADE = 0.08;
+function chipMuteDrum()   { if (!chipDrumGain) return; const now = chipAudioCtx.currentTime; chipDrumGain.gain.setValueAtTime(chipDrumGain.gain.value, now); chipDrumGain.gain.linearRampToValueAtTime(0, now + MUTE_FADE); }
+function chipUnmuteDrum() { if (!chipDrumGain) return; const now = chipAudioCtx.currentTime; chipDrumGain.gain.setValueAtTime(chipDrumGain.gain.value, now); chipDrumGain.gain.linearRampToValueAtTime(0.85, now + MUTE_FADE); }
+function chipMuteLead()   { if (!chipLeadGain) return; const now = chipAudioCtx.currentTime; chipLeadGain.gain.setValueAtTime(chipLeadGain.gain.value, now); chipLeadGain.gain.linearRampToValueAtTime(0, now + MUTE_FADE); }
+function chipUnmuteLead() { if (!chipLeadGain) return; const now = chipAudioCtx.currentTime; chipLeadGain.gain.setValueAtTime(chipLeadGain.gain.value, now); chipLeadGain.gain.linearRampToValueAtTime(1.0, now + MUTE_FADE); }
 
 // ── Sound effects ─────────────────────────────────────────────────────────────
 
@@ -2863,16 +2884,44 @@ function chipPlaySlice(startTime, fromTick, toTick) {
             g.gain.setValueAtTime(0.7, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
             src.connect(hpf); hpf.connect(shelf); shelf.connect(g); g.connect(drum);
             src.start(t); src.stop(t + 0.08);
+
+        } else if (note === 69) {
+            // ── SHAKER: every 1/8-beat (48 ticks). Strong/weak alternating accent.
+            // Hits land every 48 ticks. Every OTHER hit is on a quarter-beat (strong).
+            // We derive accent from tick position: ticks divisible by 96 = strong.
+            const tickPos = ev[0];
+            const isStrong = (tickPos % 96) === 0;
+            const gainVal  = isStrong ? 0.55 : 0.28;   // strong / weak volume
+            const decay    = isStrong ? 0.065 : 0.042; // strong lingers a touch longer
+
+            // Noise source bandpass-shaped to sit in the shaker frequency pocket (~5–9 kHz)
+            const bsz = Math.ceil(ctx.sampleRate * 0.055);
+            const buf = ctx.createBuffer(1, bsz, ctx.sampleRate);
+            const d = buf.getChannelData(0);
+            for (let i = 0; i < bsz; i++) d[i] = Math.random() * 2 - 1;
+            const src = ctx.createBufferSource(); src.buffer = buf;
+
+            // Two-stage filter: HPF to remove low mud, then a gentle peak around 7 kHz
+            const hpf = ctx.createBiquadFilter(); hpf.type = 'highpass'; hpf.frequency.value = 5500;
+            const peak = ctx.createBiquadFilter(); peak.type = 'peaking'; peak.frequency.value = 7000; peak.Q.value = 1.5; peak.gain.value = 5;
+
+            const g = ctx.createGain();
+            g.gain.setValueAtTime(gainVal, t);
+            g.gain.exponentialRampToValueAtTime(0.001, t + decay);
+
+            src.connect(hpf); hpf.connect(peak); peak.connect(g); g.connect(drum);
+            src.start(t); src.stop(t + decay + 0.005);
         }
     });
 
     // ── Synth lead ────────────────────────────────────────────────────────────
+    const lead = chipGetLead();
     chipScheduleTrack(slice(tracks[3]), startTime, secPerTick,
         (note, vel, t) => {
             const osc = ctx.createOscillator(); const g = ctx.createGain();
             osc.type = 'triangle'; osc.frequency.value = midiToHz(note + 12);
             g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.38, t + 0.012);
-            osc.connect(g); g.connect(master); osc.start(t); return { osc, g };
+            osc.connect(g); g.connect(lead); osc.start(t); return { osc, g };
         },
         ({ osc, g }, note, t) => {
             g.gain.setValueAtTime(0.38, t); g.gain.linearRampToValueAtTime(0, t + 0.03);
@@ -2904,10 +2953,16 @@ function chipStartMusic() {
 
         function scheduleLoop(loopStartTime) {
             if (!chipStarted) return;
-            const dur = chipPlaySlice(loopStartTime, loopStart, loopEnd);
-            chipLoopTimeout = setTimeout(() => scheduleLoop(loopStartTime + dur), (dur - 0.05) * 1000);
+            // Guard against scheduling into the past (e.g. tab was backgrounded and
+            // setTimeout fired late). If the loop start has already passed, snap it
+            // forward to now + a small buffer so notes aren't discarded by the engine.
+            const clampedStart = Math.max(loopStartTime, chipAudioCtx.currentTime + 0.02);
+            const dur = chipPlaySlice(clampedStart, loopStart, loopEnd);
+            // 300 ms lookahead — large enough to survive browser tab throttling
+            // (which clamps setTimeout to ~1000 ms) without audible gap.
+            chipLoopTimeout = setTimeout(() => scheduleLoop(clampedStart + dur), (dur - 0.3) * 1000);
         }
-        chipLoopTimeout = setTimeout(() => scheduleLoop(loopStartAt), (introDur - 0.05) * 1000);
+        chipLoopTimeout = setTimeout(() => scheduleLoop(loopStartAt), (introDur - 0.3) * 1000);
     }).catch(err => console.error('MIDI load failed:', err));
 }
 
@@ -2916,12 +2971,12 @@ function chipStopMusic() {
     if (chipLoopTimeout) { clearTimeout(chipLoopTimeout); chipLoopTimeout = null; }
     if (chipAudioCtx) {
         const now = chipAudioCtx.currentTime;
-        [chipMasterGain, chipDrumGain].forEach(g => {
+        [chipMasterGain, chipDrumGain, chipLeadGain].forEach(g => {
             if (!g) return;
             g.gain.setValueAtTime(g.gain.value, now);
             g.gain.linearRampToValueAtTime(0, now + 0.3);
         });
-        setTimeout(() => { chipMasterGain = null; chipDrumGain = null; }, 400);
+        setTimeout(() => { chipMasterGain = null; chipDrumGain = null; chipLeadGain = null; }, 400);
     }
 }
 
