@@ -1212,7 +1212,7 @@ const STOCKS = {
 const UNLOCK_COSTS = { red: 100, blue: 1000, yellow: 10000 };
 const MULTIPLIER_COSTS = { 10: 500, 100: 5000, 1000: 50000 };
 const MULTIPLIER_ORDER = [1, 10, 100, 1000];
-const player = { cash: 2000000, startingCash: 2000000, green: 0, red: 0, blue: 0, yellow: 0, unlocked: new Set(['green']), multiplier: 1, decorations: new Set() };
+const player = { cash: 100, startingCash: 100, green: 0, red: 0, blue: 0, yellow: 0, unlocked: new Set(['green']), multiplier: 1, decorations: new Set() };
 
 let gameStartTime      = null;  // set when gameplay first begins
 let butlerUnlockedTime = null;  // set when butler is purchased
@@ -1971,7 +1971,7 @@ async function handleShoppingEnter() {
 // ─── ROOM SCREEN ──────────────────────────────────────────────────────────────
 // Butler: walking suit man with animated eyes and walk cycle
 // Butler: walking suit man with animated eyes and walk cycle
-const butlerState = { x: 20, y: 15, dx: 1, dy: 0, walkPhase: 0, stepTimer: 0 };
+const butlerState = { x: 14, y: 15, dx: 1, dy: 0, walkPhase: 0, stepTimer: 0 };
 
 // Character mirror map for horizontal reflection
 const MIRROR_CH = {
@@ -1995,8 +1995,8 @@ function butlerStep(tick) {
         butlerState.y += butlerState.dy;
         butlerState.walkPhase = (butlerState.walkPhase + 1) % 2;
     }
-    // Tight zone: ±3 cols, ±2 rows from center (20,15)
-    const minX = 17, maxX = 23, minY = 13, maxY = 17;
+    // Tight zone: ±3 cols, ±2 rows from center (14,15)
+    const minX = 11, maxX = 17, minY = 13, maxY = 17;
     if (butlerState.x <= minX) { butlerState.dx = 1;  butlerState.dy = 0; }
     if (butlerState.x >= maxX) { butlerState.dx = -1; butlerState.dy = 0; }
     if (butlerState.y <= minY) { butlerState.dy = 1;  butlerState.dx = 0; }
@@ -2125,9 +2125,9 @@ function buildRoomGrid(tick = 0) {
         ];
         art.forEach((line, i) => {
             const startC = Math.floor((COLS - line.length) / 2);
-            writeCenter(g, 4 + i, line);
             for (let j = 0; j < line.length; j++) {
                 if (line[j] === ' ') continue;
+                g[4+i][startC+j] = line[j];
                 col[4+i][startC + j] = i === 0 ? '#888844' : i >= 3 ? '#ffee88' : '#ccaa00';
             }
         });
@@ -2153,7 +2153,6 @@ function buildRoomGrid(tick = 0) {
         const deskCol  = '#886633';
         const towerCol = '#556677';
         art.forEach((line, i) => {
-            writeStr(g, 9 + i, 11, line);
             for (let j = 0; j < line.length; j++) {
                 const ch = line[j];
                 if (ch === ' ') continue;
@@ -2161,6 +2160,7 @@ function buildRoomGrid(tick = 0) {
                 const isTower = c >= 27;
                 const isDesk  = i >= 9;
                 const isDim   = ch === '░';
+                g[9+i][c] = ch;
                 col[9+i][c] = isTower ? (isDim ? '#334455' : towerCol)
                             : isDesk  ? (isDim ? '#664422' : deskCol)
                             : (isDim  ? '#2255aa' : monCol);
@@ -2175,25 +2175,21 @@ function buildRoomGrid(tick = 0) {
         const frame = butlerArt(dx, dy, walkPhase, eyePhase);
         frame.forEach((line, i) => {
             const startC = x - Math.floor(line.length / 2);
-            // Determine the background fill colour for this row (for solid head/body)
-            const rowBg = i <= 4 ? '#ddaa88'   // head interior — skin
-                        : i <= 7 ? '#223355'   // suit interior
-                        : null;                // legs — no fill
             for (let j = 0; j < line.length; j++) {
                 const r = y + i, c = startC + j;
                 if (r < 0 || r >= KB_TOP || c < 0 || c >= COLS) continue;
                 const ch = line[j];
                 if (ch === ' ') {
-                    // Fill interior with background colour so nothing shows through
-                    if (rowBg) { g[r][c] = ' '; col[r][c] = rowBg; }
+                    // Only fill the face interior (rows 1-3) solid — everything else transparent
+                    if (i >= 1 && i <= 3) { g[r][c] = ' '; col[r][c] = '#ddaa88'; }
                     continue;
                 }
                 g[r][c] = ch;
                 col[r][c] = i <= 4 ? '#ddaa88'
-                          : i === 6 ? '#ff4444'   // bow tie
-                          : i <= 7 ? '#eeeeff'    // collar/lapels
-                          : i <= 9 ? '#223355'    // suit
-                          : '#334466';            // legs
+                          : i === 6 ? '#ff4444'
+                          : i <= 7 ? '#eeeeff'
+                          : i <= 9 ? '#223355'
+                          : '#334466';
             }
         });
     }
@@ -2216,7 +2212,7 @@ function buildRoomGrid(tick = 0) {
             const isLeaf = i < 3, isPot = i >= 7;
             for (let j = 0; j < line.length; j++) {
                 if (line[j] === ' ') continue;
-                if (g[20+i][1+j] !== ' ') continue;  // don't overwrite butler or other foreground
+                // All plant chars overwrite whatever is behind them
                 g[20+i][1+j] = line[j];
                 col[20+i][1+j] = isPot ? '#886633' : isLeaf ? (i===0?'#33ff33':'#22cc22') : '#228822';
             }
@@ -2245,7 +2241,7 @@ function buildRoomGrid(tick = 0) {
             '   ╔╩╗   ',
             ' ╔═╩═╩═╗ ',
             ...glass.map(l => ` ║ ${l} ║ `),
-            ' ╚═══════╝',
+            ' ╚═════╝ ',
             '  ══╩══  ',
             '  ═════  ',
         ];
@@ -2270,7 +2266,7 @@ function buildRoomGrid(tick = 0) {
 
 async function showRoomScreen(fromGrid, fromColors) {
     butlerTick = 0;
-    Object.assign(butlerState, { x: 20, y: 15, dx: 1, dy: 0, walkPhase: 0, stepTimer: 0 });
+    Object.assign(butlerState, { x: 14, y: 15, dx: 1, dy: 0, walkPhase: 0, stepTimer: 0 });
     const { g: roomG, col: roomCol } = buildRoomGrid(butlerTick);
     transitioning = true;
     await randomTransition(fromGrid, roomG, fromColors, roomCol);
