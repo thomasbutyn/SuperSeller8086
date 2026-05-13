@@ -1185,9 +1185,9 @@ const MULTIPLIER_ORDER = [1, 10, 100, 1000];
 const player = { cash: 100, startingCash: 100, green: 0, red: 0, blue: 0, yellow: 0, unlocked: new Set(['green']), multiplier: 1, decorations: new Set() };
 
 const DECORATION_ITEMS = [
-    { id: 'plant',     key: 'q', label: 'DESK PLANT',    cost: 100,        costLabel: '$100'  },
+    { id: 'plant',     key: 'q', label: 'PLANT',          cost: 100,        costLabel: '$100'  },
     { id: 'lamp',      key: 'w', label: 'LAVA LAMP',     cost: 1000,       costLabel: '$1K'   },
-    { id: 'monitor',   key: 'e', label: 'EXTRA MONITOR', cost: 10000,      costLabel: '$10K'  },
+    { id: 'monitor',   key: 'e', label: 'GAMER',         cost: 10000,      costLabel: '$10K'  },
     { id: 'chandelier',key: 'r', label: 'CHANDELIER',    cost: 100000,     costLabel: '$100K' },
     { id: 'butler',    key: 'a', label: 'BUTLER',        cost: 1000000,    costLabel: '$1M'   },
 ];
@@ -1932,20 +1932,27 @@ async function handleShoppingEnter() {
 }
 
 // ─── ROOM SCREEN ──────────────────────────────────────────────────────────────
+// Butler: side profile of a happy man face with butler collar, 2 frames for subtle animation
 const BUTLER_FRAMES = [
     [
-        '   ___   ',
-        '  (o o)  ',
-        '  / | \\  ',
-        ' /  |  \\ ',
-        "  _/ \\_  ",
+        '    ╭──╮ ',
+        '   ╭╯  │ ',
+        '   │ · │ ',
+        '   │  ╰╮ ',
+        '   ╰──╮│ ',
+        '    ╭─╯╰╮',
+        '  ──┤   ├',
+        '    ╰───╯',
     ],
     [
-        '   ___   ',
-        '  (- -)  ',
-        '  \\ | /  ',
-        ' /  |  \\ ',
-        "  _/ \\_  ",
+        '    ╭──╮ ',
+        '   ╭╯  │ ',
+        '   │ · │ ',
+        '   │  ╰╯ ',
+        '   ╰──╮  ',
+        '    ╭─╯╰╮',
+        '  ──┤   ├',
+        '    ╰───╯',
     ],
 ];
 
@@ -2045,66 +2052,101 @@ function buildRoomGrid(tick = 0) {
         });
     }
 
-    // ── EXTRA MONITOR — upper-right on back wall, rows 8-20, cols 20-38 ──
+    // ── GAMER — desktop tower, monitor and desk, rows 9-20, cols 19-38 ──
     if (player.decorations.has('monitor')) {
         const art = [
-            '┌─────────────────┐',
-            '│ ╔═════════════╗ │',
-            '│ ║             ║ │',
-            '│ ║  ██     ██  ║ │',
-            '│ ║  ██     ██  ║ │',
-            '│ ║             ║ │',
-            '│ ║  ▓▓▓▓▓▓▓▓▓  ║ │',
-            '│ ║             ║ │',
-            '│ ╚═════════════╝ │',
-            '└────────┬────────┘',
-            '         │         ',
-            '   ──────┴──────   ',
+            ' ┌───────────┐ ┌──┐',
+            ' │ ╔═══════╗ │ │▓▓│',
+            ' │ ║>_     ║ │ │  │',
+            ' │ ║       ║ │ │░░│',
+            ' │ ║  ████ ║ │ │▓▓│',
+            ' │ ║ ░░░░░ ║ │ │  │',
+            ' │ ╚═══════╝ │ │░░│',
+            ' └─────┬─────┘ │▓▓│',
+            '  ═════╧═════  └──┘',
+            ' ┌─────────────────┐',
+            ' │░░░░░░░░░░░░░░░░░│',
+            ' └─────────────────┘',
         ];
+        const monCol  = '#44aaff';
+        const deskCol = '#886633';
+        const towerCol = '#556677';
         art.forEach((line, i) => {
-            writeStr(g, 9 + i, 20, line);
-            const isScreen = i >= 1 && i <= 8;
-            for (let c = 20; c < 20 + line.length; c++)
-                if (g[9+i][c] !== ' ' && g[9+i][c] !== '░')
-                    col[9+i][c] = isScreen ? '#4477ff' : '#334488';
+            writeStr(g, 9 + i, 19, line);
+            for (let c = 19; c < 19 + line.length; c++) {
+                if (g[9+i][c] === ' ' || g[9+i][c] === '░') continue;
+                // tower = rightmost 4 cols (cols 35-38)
+                const isTower = c >= 35;
+                const isDesk  = i >= 9;
+                col[9+i][c] = isTower ? towerCol : isDesk ? deskCol : monCol;
+            }
+            // colour the ░ fill chars too
+            for (let c = 19; c < 19 + line.length; c++) {
+                if (g[9+i][c] !== '░') continue;
+                const isTower = c >= 35;
+                const isDesk  = i >= 9;
+                col[9+i][c] = isTower ? '#334455' : isDesk ? '#664422' : '#2255aa';
+            }
         });
     }
 
-    // ── LAVA LAMP — bottom-right, rows 16-30, cols 26-38 ──
+    // ── LAVA LAMP — bottom-right, rows 19-29, cols 28-38 ──
     if (player.decorations.has('lamp')) {
-        const p = Math.floor(tick / 2) % 4;
-        const blobs = [['▓','░','▒','▓'],['▒','▓','░','▒'],['░','▒','▓','░'],['▓','░','▒','▓']];
-        const b = blobs[p];
+        // Three bubbles cycle upward through 6 rows of the glass body
+        const f = Math.floor(tick / 2) % 6;
+        // bubble positions 0=bottom row .. 5=top row of glass
+        const b0 = (f + 0) % 6;
+        const b1 = (f + 3) % 6;
+        const b2 = (f + 5) % 6;
+
+        // Build 6 glass body rows; inner width 5 chars, bubbles at cols 1, 3
+        const glass = Array.from({length: 6}, (_, row) => {
+            const inner = [' ', ' ', ' ', ' ', ' '];
+            if (5 - row === b0) inner[1] = '●';
+            if (5 - row === b1) inner[3] = '●';
+            if (5 - row === b2) inner[2] = '○';
+            return inner.join('');
+        });
+
         const art = [
-            '  ╔═════════╗  ',
-            ` ╔╣ ${b[0]} ${b[1]} ${b[2]} ${b[0]} ╠╗ `,
-            ` ║║ ${b[1]} ${b[2]} ${b[3]} ${b[1]} ║║ `,
-            ` ║║ ${b[2]} ${b[3]} ${b[0]} ${b[2]} ║║ `,
-            ` ║║ ${b[3]} ${b[0]} ${b[1]} ${b[3]} ║║ `,
-            ` ║║ ${b[0]} ${b[1]} ${b[2]} ${b[0]} ║║ `,
-            ` ╚╣ ${b[1]} ${b[2]} ${b[3]} ${b[1]} ╠╝ `,
-            '  ╚═════════╝  ',
-            '    ╔═════╗    ',
-            '    ║     ║    ',
-            '  ══╩═════╩══  ',
+            ' ╔═════╗ ',   // 0 lamp cap top
+            ' ║·····║ ',   // 1 lamp cap glow
+            ' ╚══╦══╝ ',   // 2 cap base
+            '   ╔╩╗   ',   // 3 neck
+            ' ╔═╩═╩═╗ ',   // 4 glass shoulder
+            ...glass.map(l => ` ║ ${l} ║ `), // 5-10 glass body
+            ' ╚══╦══╝ ',   // 11 glass base
+            '   ═╩═   ',   // 12 foot
+            ' ═══════ ',   // 13 base plate
         ];
+
         art.forEach((line, i) => {
-            writeStr(g, 19 + i, 25, line);
-            const isGlob = i >= 1 && i <= 6;
-            for (let c = 25; c < 25 + line.length; c++)
-                if (g[19+i][c] !== ' ' && g[19+i][c] !== '░')
-                    col[19+i][c] = isGlob ? '#ff6600' : '#883300';
+            writeStr(g, 18 + i, 28, line);
+            for (let c = 28; c < 28 + line.length; c++) {
+                const ch = g[18+i][c];
+                if (ch === ' ') continue;
+                const isBubble = ch === '●' || ch === '○';
+                const isCap    = i <= 2;
+                const isGlass  = i >= 4 && i <= 11;
+                col[18+i][c] = isBubble ? '#ffbb00'
+                             : isCap    ? '#ffdd66'
+                             : isGlass  ? '#cc4400'
+                             : '#993300';
+            }
         });
     }
 
-    // ── BUTLER — bottom centre, rows 24-30 ──
+    // ── BUTLER — bottom centre, rows 22-29 ──
     if (player.decorations.has('butler')) {
         const frame = BUTLER_FRAMES[Math.floor(tick / 4) % BUTLER_FRAMES.length];
         frame.forEach((line, i) => {
-            writeCenter(g, 24 + i, line);
-            for (let c = 0; c < COLS; c++)
-                if (g[24+i][c] !== ' ' && g[24+i][c] !== '░')
-                    col[24+i][c] = i === 0 ? '#aaaaaa' : '#dddddd';
+            writeCenter(g, 22 + i, line);
+            for (let c = 0; c < COLS; c++) {
+                const ch = g[22+i][c];
+                if (ch === ' ') continue;
+                // rows 0-4 = face/head (skin tone), rows 5-7 = collar/jacket (white/grey)
+                col[22+i][c] = i <= 4 ? '#ddaa88' : '#eeeeee';
+            }
         });
     }
 
